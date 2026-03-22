@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Webhook Pipeline Dashboard</title>
+
+    <!-- Tailwind via CDN (no build step). -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 text-slate-900">
+    <div id="root"></div>
+
+    <!-- React via CDN (UMD build). -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel lets us use JSX directly in this single HTML file. -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useCallback, useEffect, useState } = React;
+
+      const API_BASE = "http://localhost:3000/api/v1";
+
+      const PIPELINE_STATUS_BADGES = {
+        active: "bg-emerald-100 text-emerald-700",
+        paused: "bg-amber-100 text-amber-700",
+        archived: "bg-slate-200 text-slate-700",
+      };
+
+      const JOB_STATUS_BADGES = {
+        queued: "bg-blue-100 text-blue-700",
+        processing: "bg-amber-100 text-amber-700",
+        processed: "bg-purple-100 text-purple-700",
+        completed: "bg-emerald-100 text-emerald-700",
+        failed_processing: "bg-red-100 text-red-700",
+        failed_delivery: "bg-orange-100 text-orange-700",
+      };
+
+      function shortId(value) {
+        if (!value) return "-";
+        return value.length > 10 ? `${value.slice(0, 8)}...` : value;
+      }
+
+      function formatDate(value) {
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "-";
+        return date.toLocaleString();
+      }
+
+      function formatJson(value) {
+        if (value === null || value === undefined) return "{}";
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (_error) {
+          return "{}";
+        }
+      }
+
+      async function fetchJson(path) {
+        const response = await fetch(`${API_BASE}${path}`);
+        let json = null;
+
+        try {
+          json = await response.json();
+        } catch (_error) {
+          // Ignore JSON parse errors and fall back to a generic message.
+        }
+
+        if (!response.ok) {
+          throw new Error(json?.error?.message || `Request failed: ${response.status}`);
+        }
+
+        return json;
+      }
+
+      function StatusBadge({ value, classes }) {
+        const className = classes[value] || "bg-slate-200 text-slate-700";
+        return (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${className}`}>
+            {value}
+          </span>
+        );
+      }
+
+      function StatCard({ label, value }) {
+        return (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-slate-500">{label}</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+          </div>
+        );
+      }
+
+      function Dashboard() {
+        const [stats, setStats] = useState({
+          totalPipelines: 0,
+          totalJobs: 0,
+          completedJobs: 0,
+          failedJobs: 0,
+        });
+        const [pipelines, setPipelines] = useState([]);
+        const [jobs, setJobs] = useState([]);
+        const [selectedPipelineId, setSelectedPipelineId] = useState("");
+        const [webhookPayloadText, setWebhookPayloadText] = useState(`{
+  "orderId": "123",
+  "customerName": "John",
+  "amount": 99.99
+}`);
+        const [idempotencyKey, setIdempotencyKey] = useState("");
+        const [sendingWebhook, setSendingWebhook] = useState(false);
+        const [sendResult, setSendResult] = useState(null);
+        const [loadingOverview, setLoadingOverview] = useState(true);
+        const [overviewError, setOverviewError] = useState("");
+        const [selectedJobId, setSelectedJobId] = useState("");
+        const [selectedJob, setSelectedJob] = useState(null);
+        const [loadingJobDetails, setLoadingJobDetails] = useState(false);
+        const [jobDetailsError, setJobDetailsError] = useState("");
+        const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+
+        const loadOverview = useCallback(async (silent = false) => {
+          if (!silent) {
+            setLoadingOverview(true);
+          }
+          setOverviewError("");
+
+          try {
+            const [
+              pipelinesSummary,
+              pipelinesList,
+              jobsSummary,
+              jobsList,
+              completedSummary,
+              failedProcessingSummary,
+              failedDeliverySummary,
+            ] = await Promise.all([
+              fetchJson("/pipelines?page=1&limit=1"),
+              fetchJson("/pipelines?page=1&limit=100"),
+              fetchJson("/jobs?page=1&limit=1"),
+              fetchJson("/jobs?page=1&limit=100"),
+              fetchJson("/jobs?page=1&limit=1&status=completed"),
+              fetchJson("/jobs?page=1&limit=1&status=failed_processing"),
+              fetchJson("/jobs?page=1&limit=1&status=failed_delivery"),
+            ]);
+
+            setStats({
+              totalPipelines: pipelinesSummary?.meta?.total || 0,
+              totalJobs: jobsSummary?.meta?.total || 0,
+              completedJobs: completedSummary?.meta?.total || 0,
+              failedJobs:
+                (failedProcessingSummary?.meta?.total || 0) +
+                (failedDeliverySummary?.meta?.total || 0),
+            });
+
+            setPipelines(Array.isArray(pipelinesList?.data) ? pipelinesList.data : []);
+            setJobs(Array.isArray(jobsList?.data) ? jobsList.data : []);
+            setLastUpdatedAt(new Date());
+          } catch (error) {
+            setOverviewError(
+              error?.message ||
+                "Failed to load dashboard data. Check API availability and CORS settings.",
+            );
+          } finally {
+            if (!silent) {
+              setLoadingOverview(false);
+            }
+          }
+        }, []);
+
+        const handleSendWebhook = useCallback(async () => {
+          const selectedPipeline = pipelines.find((pipeline) => pipeline.id === selectedPipelineId);
+
+          if (!selectedPipeline) {
+            setSendResult({ type: "error", message: "Please select an active pipeline." });
+            return;
+          }
+
+          let parsedPayload;
+          try {
+            parsedPayload = JSON.parse(webhookPayloadText);
+          } catch (_error) {
+            setSendResult({ type: "error", message: "Payload must be valid JSON." });
+            return;
+          }
+
+          if (!parsedPayload || Array.isArray(parsedPayload) || typeof parsedPayload !== "object") {
+            setSendResult({ type: "error", message: "Payload must be a JSON object." });
+            return;
+          }
+
+          setSendingWebhook(true);
+          setSendResult(null);
+
+          try {
+            const requestBody = { payload: parsedPayload };
+            const trimmedIdempotencyKey = idempotencyKey.trim();
+
+            if (trimmedIdempotencyKey) {
+              requestBody.idempotencyKey = trimmedIdempotencyKey;
+            }
+
+            const response = await fetch(
+              `${API_BASE}/webhooks/${encodeURIComponent(selectedPipeline.webhookPath)}`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(requestBody),
+              },
+            );
+
+            let json = null;
+            try {
+              json = await response.json();
+            } catch (_error) {
+              // Ignore parse errors and rely on fallback message below.
+            }
+
+            if (!response.ok) {
+              throw new Error(json?.error?.message || `Request failed: ${response.status}`);
+            }
+
+            const jobId = json?.data?.jobId;
+            setSendResult({ type: "success", message: `Job queued: ${jobId || "unknown"}` });
+            await loadOverview(false);
+          } catch (error) {
+            setSendResult({ type: "error", message: error?.message || "Unknown error" });
+          } finally {
+            setSendingWebhook(false);
+          }
+        }, [idempotencyKey, loadOverview, pipelines, selectedPipelineId, webhookPayloadText]);
+
+        const activePipelines = pipelines.filter((pipeline) => pipeline.status === "active");
+
+        const loadJobDetails = useCallback(async (jobId, silent = false) => {
+          if (!jobId) {
+            setSelectedJob(null);
+            return;
+          }
+
+          if (!silent) {
+            setLoadingJobDetails(true);
+          }
+          setJobDetailsError("");
+
+          try {
+            const response = await fetchJson(`/jobs/${jobId}`);
+            setSelectedJob(response?.data || null);
+          } catch (error) {
+            setSelectedJob(null);
+            setJobDetailsError(error?.message || "Failed to load job details.");
+          } finally {
+            if (!silent) {
+              setLoadingJobDetails(false);
+            }
+          }
+        }, []);
+
+        useEffect(() => {
+          loadOverview();
+        }, [loadOverview]);
+
+        useEffect(() => {
+          if (!selectedJobId) {
+            setSelectedJob(null);
+            setJobDetailsError("");
+            return;
+          }
+
+          loadJobDetails(selectedJobId);
+        }, [selectedJobId, loadJobDetails]);
+
+        useEffect(() => {
+          const intervalId = setInterval(() => {
+            loadOverview(true);
+            if (selectedJobId) {
+              loadJobDetails(selectedJobId, true);
+            }
+          }, 10000);
+
+          return () => clearInterval(intervalId);
+        }, [loadOverview, loadJobDetails, selectedJobId]);
+
+        return (
+          <div>
+            <header className="border-b border-slate-700 bg-slate-900 text-white">
+              <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+                <h1 className="text-xl font-bold">Webhook Pipeline Dashboard</h1>
+                <p className="text-sm text-slate-300">Auto-refresh every 10s</p>
+              </div>
+            </header>
+
+            <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+              <section>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Stats</h2>
+                  <button
+                    type="button"
+                    onClick={() => loadOverview()}
+                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <StatCard label="Total Pipelines" value={stats.totalPipelines} />
+                  <StatCard label="Total Jobs" value={stats.totalJobs} />
+                  <StatCard label="Completed Jobs" value={stats.completedJobs} />
+                  <StatCard label="Failed Jobs" value={stats.failedJobs} />
+                </div>
+
+                {lastUpdatedAt && (
+                  <p className="mt-3 text-xs text-slate-500">
+                    Last updated: {lastUpdatedAt.toLocaleTimeString()}
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-4 text-lg font-semibold">Send Webhook</h2>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Active Pipeline
+                    </label>
+                    <select
+                      value={selectedPipelineId}
+                      onChange={(event) => setSelectedPipelineId(event.target.value)}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                    >
+                      <option value="">Select an active pipeline</option>
+                      {activePipelines.map((pipeline) => (
+                        <option key={pipeline.id} value={pipeline.id}>
+                          {pipeline.name}
+                        </option>
+                      ))}
+                    </select>
+                    {activePipelines.length === 0 && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        No active pipelines available. Activate one from the Pipelines API.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Webhook Payload (JSON)
+                    </label>
+                    <textarea
+                      value={webhookPayloadText}
+                      onChange={(event) => setWebhookPayloadText(event.target.value)}
+                      rows={8}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Idempotency Key (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={idempotencyKey}
+                      onChange={(event) => setIdempotencyKey(event.target.value)}
+                      placeholder="Optional idempotency key"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleSendWebhook}
+                      disabled={sendingWebhook}
+                      className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {sendingWebhook ? "Sending..." : "Send Webhook"}
+                    </button>
+                  </div>
+
+                  {sendResult?.type === "success" && (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                      {sendResult.message}
+                    </div>
+                  )}
+
+                  {sendResult?.type === "error" && (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      Error: {sendResult.message}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {loadingOverview && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+                  Loading dashboard data...
+                </div>
+              )}
+
+              {overviewError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {overviewError}
+                </div>
+              )}
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-4 text-lg font-semibold">Pipelines</h2>
+
+                {pipelines.length === 0 ? (
+                  <p className="text-sm text-slate-500">No pipelines found.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">Name</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Webhook Path
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Actions Count
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Subscribers Count
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {pipelines.map((pipeline) => (
+                          <tr key={pipeline.id}>
+                            <td className="px-3 py-2">{pipeline.name}</td>
+                            <td className="px-3 py-2">
+                              <StatusBadge
+                                value={pipeline.status}
+                                classes={PIPELINE_STATUS_BADGES}
+                              />
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs">
+                              /api/v1/webhooks/{pipeline.webhookPath}
+                            </td>
+                            <td className="px-3 py-2">{pipeline.actionsCount ?? 0}</td>
+                            <td className="px-3 py-2">{pipeline.subscribersCount ?? 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-4 text-lg font-semibold">Jobs</h2>
+
+                {jobs.length === 0 ? (
+                  <p className="text-sm text-slate-500">No jobs found.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">Job ID</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Pipeline ID
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Created At
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {jobs.map((job) => (
+                          <tr
+                            key={job.id}
+                            onClick={() => setSelectedJobId(job.id)}
+                            className={`cursor-pointer hover:bg-slate-50 ${
+                              selectedJobId === job.id ? "bg-slate-100" : ""
+                            }`}
+                          >
+                            <td className="px-3 py-2 font-mono text-xs">{shortId(job.id)}</td>
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {shortId(job.pipeline_id)}
+                            </td>
+                            <td className="px-3 py-2">
+                              <StatusBadge value={job.status} classes={JOB_STATUS_BADGES} />
+                            </td>
+                            <td className="px-3 py-2">{formatDate(job.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-4 text-lg font-semibold">Job Details</h2>
+
+                {!selectedJobId && (
+                  <p className="text-sm text-slate-500">Select a job row to view details.</p>
+                )}
+
+                {selectedJobId && loadingJobDetails && (
+                  <p className="text-sm text-slate-600">Loading job details...</p>
+                )}
+
+                {selectedJobId && jobDetailsError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {jobDetailsError}
+                  </div>
+                )}
+
+                {selectedJobId && selectedJob && !loadingJobDetails && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+                      <div>
+                        <span className="font-semibold text-slate-700">Job ID:</span>{" "}
+                        <span className="font-mono text-xs">{selectedJob.id}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-700">Status:</span>{" "}
+                        <StatusBadge value={selectedJob.status} classes={JOB_STATUS_BADGES} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-slate-700">Payload JSON</h3>
+                        <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">
+                          {formatJson(selectedJob.payload)}
+                        </pre>
+                      </div>
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                          Result Payload JSON
+                        </h3>
+                        <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">
+                          {formatJson(selectedJob.result_payload)}
+                        </pre>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                        Status History Timeline
+                      </h3>
+                      {selectedJob.statusHistory?.length ? (
+                        <ol className="space-y-2">
+                          {selectedJob.statusHistory.map((item) => (
+                            <li key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-sm font-medium text-slate-800">
+                                {item.from_status ? `${item.from_status} -> ${item.to_status}` : item.to_status}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {formatDate(item.changed_at)} | actor: {item.actor}
+                              </p>
+                              {item.reason && (
+                                <p className="mt-1 text-xs text-slate-600">Reason: {item.reason}</p>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="text-sm text-slate-500">No status history available.</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-700">Delivery Attempts</h3>
+                      {selectedJob.deliveryAttempts?.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                  Attempt
+                                </th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                  Subscriber URL
+                                </th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">HTTP</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                  Started
+                                </th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                                  Finished
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {selectedJob.deliveryAttempts.map((attempt) => (
+                                <tr key={attempt.id}>
+                                  <td className="px-3 py-2">{attempt.attempt_no}</td>
+                                  <td className="px-3 py-2 font-mono text-xs">{attempt.target_url}</td>
+                                  <td className="px-3 py-2">
+                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                      {attempt.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2">{attempt.response_status_code ?? "-"}</td>
+                                  <td className="px-3 py-2">{formatDate(attempt.started_at)}</td>
+                                  <td className="px-3 py-2">{formatDate(attempt.finished_at)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500">No delivery attempts available.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </main>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<Dashboard />);
+    </script>
+  </body>
+</html>

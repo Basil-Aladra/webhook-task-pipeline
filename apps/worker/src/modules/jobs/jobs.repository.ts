@@ -1,0 +1,172 @@
+import { Pool, PoolClient } from 'pg';
+
+import { pool } from '../../db/pool';
+import { Job, JobStatus, UpdateJobStatusExtra } from './jobs.types';
+
+type Queryable = Pool | PoolClient;
+type TimestampValue = string | Date;
+
+type DatabaseJobRow = {
+  id: string;
+  pipeline_id: string;
+  status: JobStatus;
+  payload: Record<string, unknown>;
+  idempotency_key: string | null;
+  available_at: TimestampValue;
+  locked_at: TimestampValue | null;
+  locked_by: string | null;
+  lock_expires_at: TimestampValue | null;
+  processing_attempt_count: number;
+  result_payload: Record<string, unknown> | null;
+  last_error: Record<string, unknown> | null;
+  received_at: TimestampValue;
+  started_at: TimestampValue | null;
+  completed_at: TimestampValue | null;
+  created_at: TimestampValue;
+  updated_at: TimestampValue;
+};
+
+function toIsoString(value: TimestampValue | null): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return value;
+}
+
+function mapDatabaseJob(row: DatabaseJobRow): Job {
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    status: row.status,
+    payload: row.payload,
+    idempotencyKey: row.idempotency_key,
+    availableAt: toIsoString(row.available_at) ?? new Date().toISOString(),
+    lockedAt: toIsoString(row.locked_at),
+    lockedBy: row.locked_by,
+    lockExpiresAt: toIsoString(row.lock_expires_at),
+    processingAttemptCount: row.processing_attempt_count,
+    resultPayload: row.result_payload,
+    lastError: row.last_error,
+    receivedAt: toIsoString(row.received_at) ?? new Date().toISOString(),
+    startedAt: toIsoString(row.started_at),
+    completedAt: toIsoString(row.completed_at),
+    createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
+    updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
+  };
+}
+
+// Fetches and locks the next available queued job.
+// Uses FOR UPDATE SKIP LOCKED to prevent two workers from taking the same job.
+export async function fetchNextJob(db: Queryable = pool): Promise<Job | null> {
+  const query = `
+    UPDATE jobs
+    SET
+      status = 'processing',
+      locked_at = now(),
+      locked_by = 'worker-1',
+      lock_expires_at = now() + interval '5 minutes',
+      started_at = now(),
+      processing_attempt_count = processing_attempt_count + 1,
+      updated_at = now()
+    WHERE id = (
+      SELECT id
+      FROM jobs
+      WHERE status = 'queued'
+        AND available_at <= now()
+      ORDER BY available_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING
+      id,
+      pipeline_id,
+      status,
+      payload,
+      idempotency_key,
+      available_at,
+      locked_at,
+      locked_by,
+      lock_expires_at,
+      processing_attempt_count,
+      result_payload,
+      last_error,
+      received_at,
+      started_at,
+      completed_at,
+      created_at,
+      updated_at
+  `;
+
+  const result = await db.query<DatabaseJobRow>(query);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return mapDatabaseJob(result.rows[0]);
+}
+
+// Updates job status and optional fields such as result payload or error details.
+export async function updateJobStatus(
+  jobId: string,
+  status: JobStatus,
+  extra: UpdateJobStatusExtra = {},
+  db: Queryable = pool,
+): Promise<void> {
+  const setClauses: string[] = [];
+  const values: Array<string | Record<string, unknown> | null> = [];
+
+  values.push(status);
+  setClauses.push(`status = $${values.length}`);
+
+  if (extra.resultPayload !== undefined) {
+    values.push(extra.resultPayload);
+    setClauses.push(`result_payload = $${values.length}`);
+  }
+
+  if (extra.lastError !== undefined) {
+    values.push(extra.lastError);
+    setClauses.push(`last_error = $${values.length}`);
+  }
+
+  if (extra.completedAt !== undefined) {
+    const completedAtValue =
+      extra.completedAt instanceof Date ? extra.completedAt.toISOString() : extra.completedAt;
+    values.push(completedAtValue);
+    setClauses.push(`completed_at = $${values.length}`);
+  }
+
+  setClauses.push('updated_at = now()');
+
+  values.push(jobId);
+
+  const query = `
+    UPDATE jobs
+    SET ${setClauses.join(', ')}
+    WHERE id = $${values.length}
+  `;
+
+  await db.query(query, values);
+}
+
+// Adds a status transition entry for job history/audit.
+export async function addJobStatusHistory(
+  jobId: string,
+  fromStatus: JobStatus | null,
+  toStatus: JobStatus,
+  reason: string | null,
+  actor: string,
+  db: Queryable = pool,
+): Promise<void> {
+  const query = `
+    INSERT INTO job_status_history (job_id, from_status, to_status, reason, actor)
+    VALUES ($1, $2, $3, $4, $5)
+  `;
+
+  await db.query(query, [jobId, fromStatus, toStatus, reason, actor]);
+}
