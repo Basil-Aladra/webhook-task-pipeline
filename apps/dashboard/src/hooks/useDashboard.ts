@@ -184,33 +184,6 @@ function getStoredValue<T>(key: string, fallback: T, parser: (value: string) => 
   }
 }
 
-function mapStatusTransitionLevel(toStatus: string): LogLevel {
-  if (toStatus === "failed_processing" || toStatus === "failed_delivery") {
-    return "error";
-  }
-  if (toStatus === "processing") {
-    return "warn";
-  }
-  return "info";
-}
-
-function mapDeliveryAttemptLevel(status: string): LogLevel {
-  if (status === "failed_final") {
-    return "error";
-  }
-  if (status === "failed_retryable") {
-    return "warn";
-  }
-  return "info";
-}
-
-function mapActorToSource(actor: string): LogSource {
-  const normalizedActor = actor.toLowerCase();
-  if (normalizedActor.includes("worker")) return "worker";
-  if (normalizedActor.includes("api")) return "api";
-  return "system";
-}
-
 export function useDashboard(activePage: DashboardPage = "overview") {
   const [apiKey, setApiKey] = useState<string>(() => {
     try {
@@ -301,33 +274,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   );
 
   const filteredLogs = useMemo(() => {
-    const normalizedSearch = logsSearchText.trim().toLowerCase();
-
-    return logs.filter((entry) => {
-      if (logsLevelFilter && entry.level !== logsLevelFilter) {
-        return false;
-      }
-
-      if (logsSourceFilter && entry.source !== logsSourceFilter) {
-        return false;
-      }
-
-      if (!normalizedSearch) {
-        return true;
-      }
-
-      const haystack = [
-        entry.message,
-        entry.jobId || "",
-        entry.pipelineId || "",
-        entry.correlationId || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(normalizedSearch);
-    });
-  }, [logs, logsLevelFilter, logsSourceFilter, logsSearchText]);
+    return logs;
+  }, [logs]);
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -685,78 +633,27 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       setLogsError("");
 
       try {
-        const jobsResponse = await apiRequest<ApiListResponse<JobListItem>>("/jobs?page=1&limit=30", {
+        const searchParams = new URLSearchParams();
+        searchParams.set("limit", "300");
+
+        if (logsLevelFilter) {
+          searchParams.set("level", logsLevelFilter);
+        }
+
+        if (logsSourceFilter) {
+          searchParams.set("source", logsSourceFilter);
+        }
+
+        const trimmedSearch = logsSearchText.trim();
+        if (trimmedSearch) {
+          searchParams.set("search", trimmedSearch);
+        }
+
+        const response = await apiRequest<ApiListResponse<LogEntry>>(`/logs?${searchParams.toString()}`, {
           apiKey,
         });
-        const recentJobs = Array.isArray(jobsResponse.data) ? jobsResponse.data : [];
 
-        const detailedJobs = await Promise.all(
-          recentJobs.map(async (job) => {
-            try {
-              const response = await apiRequest<ApiSingleResponse<JobDetails>>(`/jobs/${job.id}`, { apiKey });
-              return response.data;
-            } catch {
-              return null;
-            }
-          }),
-        );
-
-        const logEntries: LogEntry[] = [];
-        let counter = 0;
-
-        detailedJobs.forEach((job) => {
-          if (!job) {
-            return;
-          }
-
-          const correlationId = job.idempotency_key || null;
-
-          (job.statusHistory || []).forEach((historyItem) => {
-            const transition = historyItem.from_status
-              ? `${historyItem.from_status} -> ${historyItem.to_status}`
-              : historyItem.to_status;
-            const reason = historyItem.reason ? ` (${historyItem.reason})` : "";
-
-            logEntries.push({
-              id: `${job.id}-history-${historyItem.id}-${counter++}`,
-              timestamp: historyItem.changed_at,
-              level: mapStatusTransitionLevel(historyItem.to_status),
-              source: mapActorToSource(historyItem.actor),
-              message: `Status transition ${transition}${reason}`,
-              jobId: job.id,
-              pipelineId: job.pipeline_id,
-              correlationId,
-            });
-          });
-
-          (job.deliveryAttempts || []).forEach((attempt) => {
-            const responseInfo =
-              typeof attempt.response_status_code === "number"
-                ? ` (HTTP ${attempt.response_status_code})`
-                : "";
-            const errorInfo = attempt.error_message ? ` - ${attempt.error_message}` : "";
-            const timestamp =
-              attempt.finished_at || attempt.started_at || attempt.scheduled_at || attempt.created_at;
-
-            if (!timestamp) {
-              return;
-            }
-
-            logEntries.push({
-              id: `${job.id}-delivery-${attempt.id}-${counter++}`,
-              timestamp,
-              level: mapDeliveryAttemptLevel(attempt.status),
-              source: "delivery",
-              message: `Delivery attempt #${attempt.attempt_no} ${attempt.status}${responseInfo}${errorInfo}`,
-              jobId: job.id,
-              pipelineId: job.pipeline_id,
-              correlationId,
-            });
-          });
-        });
-
-        logEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setLogs(logEntries.slice(0, 300));
+        setLogs(Array.isArray(response.data) ? response.data : []);
       } catch (error) {
         setLogsError(error instanceof Error ? error.message : "Failed to load logs.");
       } finally {
@@ -765,7 +662,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
         }
       }
     },
-    [apiKey],
+    [apiKey, logsLevelFilter, logsSearchText, logsSourceFilter],
   );
 
   const loadWorkerHealth = useCallback(

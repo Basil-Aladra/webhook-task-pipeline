@@ -48,6 +48,7 @@ export async function deliverToSubscriber(
   });
 
   logger.info('Delivery attempt started', {
+    source: 'delivery',
     jobId: job.id,
     pipelineId: job.pipelineId,
     subscriberId: subscriber.id,
@@ -76,6 +77,7 @@ export async function deliverToSubscriber(
       });
 
       logger.info('Delivery succeeded', {
+        source: 'delivery',
         jobId: job.id,
         pipelineId: job.pipelineId,
         subscriberId: subscriber.id,
@@ -105,6 +107,7 @@ export async function deliverToSubscriber(
     });
 
     logger.warn('Delivery failed', {
+      source: 'delivery',
       jobId: job.id,
       pipelineId: job.pipelineId,
       subscriberId: subscriber.id,
@@ -131,6 +134,7 @@ export async function deliverToSubscriber(
     });
 
     logger.warn('Delivery failed', {
+      source: 'delivery',
       jobId: job.id,
       pipelineId: job.pipelineId,
       subscriberId: subscriber.id,

@@ -7,6 +7,7 @@ import { apiRateLimiter, webhookRateLimiter } from './middleware/rateLimiter';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
 
 import jobsRouter from './modules/jobs/jobs.routes';
+import logsRouter from './modules/logs/logs.routes';
 import authRouter from './modules/auth/auth.routes';
 import metricsRouter from './modules/metrics/metrics.routes';
 import pipelinesRouter from './modules/pipelines/pipelines.routes';
@@ -47,12 +48,14 @@ app.use('/api/v1/pipelines', apiKeyAuth);
 app.use('/api/v1/jobs', apiKeyAuth);
 app.use('/api/v1/metrics', apiKeyAuth);
 app.use('/api/v1/worker', apiKeyAuth);
+app.use('/api/v1/logs', apiKeyAuth);
 
 // Mount versioned API routes.
 app.use('/api/v1', authRouter);
 app.use('/api/v1', pipelinesRouter);
 app.use('/api/v1', webhooksRouter);
 app.use('/api/v1', jobsRouter);
+app.use('/api/v1', logsRouter);
 app.use('/api/v1', metricsRouter);
 app.use('/api/v1', workerRouter);
 
