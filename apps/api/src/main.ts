@@ -4,8 +4,10 @@ import express from 'express';
 import { logger } from './shared/logger';
 
 import { apiRateLimiter, webhookRateLimiter } from './middleware/rateLimiter';
+import { apiKeyAuth } from './middleware/apiKeyAuth';
 
 import jobsRouter from './modules/jobs/jobs.routes';
+import authRouter from './modules/auth/auth.routes';
 import metricsRouter from './modules/metrics/metrics.routes';
 import pipelinesRouter from './modules/pipelines/pipelines.routes';
 import webhooksRouter from './modules/webhooks/webhooks.routes';
@@ -35,7 +37,17 @@ app.use('/api/v1/webhooks', webhookRateLimiter);
 // `apiRateLimiter` skips webhook routes so limits don't stack.
 app.use('/api/v1', apiRateLimiter);
 
+// Protect management/query endpoints with API keys.
+// These prefixes cover:
+// - /api/v1/pipelines/* (pipeline CRUD)
+// - /api/v1/jobs/* (job status/history queries)
+// - /api/v1/metrics (metrics dashboard queries)
+app.use('/api/v1/pipelines', apiKeyAuth);
+app.use('/api/v1/jobs', apiKeyAuth);
+app.use('/api/v1/metrics', apiKeyAuth);
+
 // Mount versioned API routes.
+app.use('/api/v1', authRouter);
 app.use('/api/v1', pipelinesRouter);
 app.use('/api/v1', webhooksRouter);
 app.use('/api/v1', jobsRouter);
