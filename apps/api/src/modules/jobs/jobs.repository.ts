@@ -141,6 +141,26 @@ export type PaginatedJobs = {
   total: number;
 };
 
+export type DeadLetterJob = {
+  id: string;
+  pipeline_id: string;
+  status: JobStatus;
+  payload: Record<string, unknown>;
+  result_payload: Record<string, unknown> | null;
+  last_error: Record<string, unknown> | null;
+  received_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  deliveryAttempts: DeliveryAttemptItem[];
+};
+
+export type DeadLetterJobsResult = {
+  items: DeadLetterJob[];
+  total: number;
+};
+
 function toIsoString(value: TimestampValue | null): string | null {
   if (value === null) {
     return null;
@@ -393,5 +413,69 @@ export async function getJobById(jobId: string, db: Queryable = pool): Promise<J
     updated_at: toIsoString(job.updated_at) ?? new Date().toISOString(),
     statusHistory,
     deliveryAttempts,
+  };
+}
+
+// Returns failed-delivery jobs (dead letter queue) with delivery attempts.
+export async function getDeadLetterJobs(db: Queryable = pool): Promise<DeadLetterJobsResult> {
+  const query = `
+    SELECT
+      id,
+      pipeline_id,
+      status,
+      payload,
+      result_payload,
+      last_error,
+      received_at,
+      started_at,
+      completed_at,
+      created_at,
+      updated_at
+    FROM jobs
+    WHERE status = $1
+    ORDER BY created_at DESC
+  `;
+
+  const result = await db.query<
+    Pick<
+      JobDetailRow,
+      | 'id'
+      | 'pipeline_id'
+      | 'status'
+      | 'payload'
+      | 'result_payload'
+      | 'last_error'
+      | 'received_at'
+      | 'started_at'
+      | 'completed_at'
+      | 'created_at'
+      | 'updated_at'
+    >
+  >(query, ['failed_delivery']);
+
+  const items = await Promise.all(
+    result.rows.map(async (row) => {
+      const deliveryAttempts = await getDeliveryAttempts(row.id, db);
+
+      return {
+        id: row.id,
+        pipeline_id: row.pipeline_id,
+        status: row.status,
+        payload: row.payload,
+        result_payload: row.result_payload,
+        last_error: row.last_error,
+        received_at: toIsoString(row.received_at) ?? new Date().toISOString(),
+        started_at: toIsoString(row.started_at),
+        completed_at: toIsoString(row.completed_at),
+        created_at: toIsoString(row.created_at) ?? new Date().toISOString(),
+        updated_at: toIsoString(row.updated_at) ?? new Date().toISOString(),
+        deliveryAttempts,
+      };
+    }),
+  );
+
+  return {
+    items,
+    total: items.length,
   };
 }

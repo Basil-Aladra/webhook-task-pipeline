@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../shared/logger';
 import { ZodError } from 'zod';
 
-import { getAllJobs, getJobById } from './jobs.repository';
+import { getAllJobs, getDeadLetterJobs, getJobById } from './jobs.repository';
 import { jobIdParamSchema, listJobsQuerySchema } from './jobs.types';
 
 function handleJobsError(error: unknown, res: Response): void {
@@ -38,6 +38,22 @@ export async function getAllJobsHandler(req: Request, res: Response): Promise<vo
       meta: {
         page: query.page,
         limit: query.limit,
+        total: result.total,
+      },
+    });
+  } catch (error) {
+    handleJobsError(error, res);
+  }
+}
+
+// GET /jobs/dead-letter
+export async function getDeadLetterJobsHandler(_req: Request, res: Response): Promise<void> {
+  try {
+    const result = await getDeadLetterJobs();
+
+    res.status(200).json({
+      data: result.items,
+      meta: {
         total: result.total,
       },
     });

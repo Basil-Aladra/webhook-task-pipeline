@@ -6,5 +6,9 @@ import { start } from './modules/worker/worker.runner';
 // Load environment variables from .env when running locally.
 dotenv.config();
 
-logger.info('Starting worker service...');
+const workerId = process.env.WORKER_ID || 'worker-1';
+
+logger.info('Worker started', {
+  workerId,
+});
 start();

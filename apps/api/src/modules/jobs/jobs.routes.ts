@@ -1,11 +1,19 @@
 import { Router } from 'express';
 
-import { getAllJobsHandler, getJobByIdHandler } from './jobs.controller';
+import {
+  getAllJobsHandler,
+  getDeadLetterJobsHandler,
+  getJobByIdHandler,
+} from './jobs.controller';
 
 const jobsRouter = Router();
 
 // List jobs with optional filters and pagination.
 jobsRouter.get('/jobs', getAllJobsHandler);
+
+// List jobs that are permanently failed delivery (dead letter queue).
+// This route must come before /jobs/:jobId to avoid route conflicts.
+jobsRouter.get('/jobs/dead-letter', getDeadLetterJobsHandler);
 
 // Get one job with status history and delivery attempts.
 jobsRouter.get('/jobs/:jobId', getJobByIdHandler);

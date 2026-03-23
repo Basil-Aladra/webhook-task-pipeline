@@ -4,6 +4,7 @@ import express from 'express';
 import { logger } from './shared/logger';
 
 import jobsRouter from './modules/jobs/jobs.routes';
+import metricsRouter from './modules/metrics/metrics.routes';
 import pipelinesRouter from './modules/pipelines/pipelines.routes';
 import webhooksRouter from './modules/webhooks/webhooks.routes';
 
@@ -20,6 +21,7 @@ app.use(express.json());
 app.use('/api/v1', pipelinesRouter);
 app.use('/api/v1', webhooksRouter);
 app.use('/api/v1', jobsRouter);
+app.use('/api/v1', metricsRouter);
 
 // Simple health endpoint used by local checks and container health probes.
 app.get('/health', (_req, res) => {

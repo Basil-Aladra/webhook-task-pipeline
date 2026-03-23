@@ -63,12 +63,14 @@ function mapDatabaseJob(row: DatabaseJobRow): Job {
 // Fetches and locks the next available queued job.
 // Uses FOR UPDATE SKIP LOCKED to prevent two workers from taking the same job.
 export async function fetchNextJob(db: Queryable = pool): Promise<Job | null> {
+  const workerId = process.env.WORKER_ID || 'worker-1';
+
   const query = `
     UPDATE jobs
     SET
       status = 'processing',
       locked_at = now(),
-      locked_by = 'worker-1',
+      locked_by = $1,
       lock_expires_at = now() + interval '5 minutes',
       started_at = now(),
       processing_attempt_count = processing_attempt_count + 1,
@@ -102,7 +104,7 @@ export async function fetchNextJob(db: Queryable = pool): Promise<Job | null> {
       updated_at
   `;
 
-  const result = await db.query<DatabaseJobRow>(query);
+  const result = await db.query<DatabaseJobRow>(query, [workerId]);
 
   if (result.rowCount === 0) {
     return null;

@@ -66,5 +66,24 @@ services:
       api:
         condition: service_healthy
 
+  # Second worker service for concurrent background processing.
+  worker2:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: webhook_pipeline_worker_2
+    restart: on-failure
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/webhook_pipeline
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-5000}
+      WORKER_ID: worker-2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:

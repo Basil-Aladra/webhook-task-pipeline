@@ -100,8 +100,36 @@
           completedJobs: 0,
           failedJobs: 0,
         });
+        const [metrics, setMetrics] = useState({
+          activePipelines: 0,
+          successfulDeliveries: 0,
+          failedDeliveries: 0,
+          totalDeliveryAttempts: 0,
+          jobsByStatus: {
+            queued: 0,
+            processing: 0,
+            processed: 0,
+            completed: 0,
+            failed_processing: 0,
+            failed_delivery: 0,
+          },
+        });
         const [pipelines, setPipelines] = useState([]);
         const [jobs, setJobs] = useState([]);
+        const [deadLetterJobs, setDeadLetterJobs] = useState([]);
+        const [jobsStatusFilter, setJobsStatusFilter] = useState("");
+        const [appliedJobsStatusFilter, setAppliedJobsStatusFilter] = useState("");
+        const [showCreatePipelineModal, setShowCreatePipelineModal] = useState(false);
+        const [creatingPipeline, setCreatingPipeline] = useState(false);
+        const [createPipelineError, setCreatePipelineError] = useState("");
+        const [createPipelineResult, setCreatePipelineResult] = useState(null);
+        const [createPipelineName, setCreatePipelineName] = useState("");
+        const [createPipelineWebhookPath, setCreatePipelineWebhookPath] = useState("");
+        const [createPipelineDescription, setCreatePipelineDescription] = useState("");
+        const [createPipelineStatus, setCreatePipelineStatus] = useState("paused");
+        const [createPipelineActionType, setCreatePipelineActionType] = useState("transform");
+        const [createPipelineActionConfigText, setCreatePipelineActionConfigText] = useState("{}");
+        const [createPipelineSubscriberUrl, setCreatePipelineSubscriberUrl] = useState("");
         const [selectedPipelineId, setSelectedPipelineId] = useState("");
         const [webhookPayloadText, setWebhookPayloadText] = useState(`{
   "orderId": "123",
@@ -126,6 +154,10 @@
           setOverviewError("");
 
           try {
+            const jobsListPath = appliedJobsStatusFilter
+              ? `/jobs?status=${encodeURIComponent(appliedJobsStatusFilter)}&page=1&limit=100`
+              : "/jobs?page=1&limit=100";
+
             const [
               pipelinesSummary,
               pipelinesList,
@@ -134,14 +166,18 @@
               completedSummary,
               failedProcessingSummary,
               failedDeliverySummary,
+              deadLetterJobsResponse,
+              metricsResponse,
             ] = await Promise.all([
               fetchJson("/pipelines?page=1&limit=1"),
               fetchJson("/pipelines?page=1&limit=100"),
               fetchJson("/jobs?page=1&limit=1"),
-              fetchJson("/jobs?page=1&limit=100"),
+              fetchJson(jobsListPath),
               fetchJson("/jobs?page=1&limit=1&status=completed"),
               fetchJson("/jobs?page=1&limit=1&status=failed_processing"),
               fetchJson("/jobs?page=1&limit=1&status=failed_delivery"),
+              fetchJson("/jobs?status=failed_delivery&page=1&limit=100"),
+              fetchJson("/metrics"),
             ]);
 
             setStats({
@@ -155,6 +191,51 @@
 
             setPipelines(Array.isArray(pipelinesList?.data) ? pipelinesList.data : []);
             setJobs(Array.isArray(jobsList?.data) ? jobsList.data : []);
+
+            const failedJobs = Array.isArray(deadLetterJobsResponse?.data)
+              ? deadLetterJobsResponse.data
+              : [];
+
+            const failedJobsWithAttempts = await Promise.all(
+              failedJobs.map(async (job) => {
+                try {
+                  const jobDetailsResponse = await fetchJson(`/jobs/${job.id}`);
+                  const attempts = Array.isArray(jobDetailsResponse?.data?.deliveryAttempts)
+                    ? jobDetailsResponse.data.deliveryAttempts
+                    : [];
+
+                  return {
+                    id: job.id,
+                    pipeline_id: job.pipeline_id,
+                    created_at: job.created_at,
+                    deliveryAttemptsCount: attempts.length,
+                  };
+                } catch (_error) {
+                  return {
+                    id: job.id,
+                    pipeline_id: job.pipeline_id,
+                    created_at: job.created_at,
+                    deliveryAttemptsCount: 0,
+                  };
+                }
+              }),
+            );
+
+            setDeadLetterJobs(failedJobsWithAttempts);
+            setMetrics({
+              activePipelines: metricsResponse?.data?.activePipelines || 0,
+              successfulDeliveries: metricsResponse?.data?.successfulDeliveries || 0,
+              failedDeliveries: metricsResponse?.data?.failedDeliveries || 0,
+              totalDeliveryAttempts: metricsResponse?.data?.totalDeliveryAttempts || 0,
+              jobsByStatus: {
+                queued: metricsResponse?.data?.jobsByStatus?.queued || 0,
+                processing: metricsResponse?.data?.jobsByStatus?.processing || 0,
+                processed: metricsResponse?.data?.jobsByStatus?.processed || 0,
+                completed: metricsResponse?.data?.jobsByStatus?.completed || 0,
+                failed_processing: metricsResponse?.data?.jobsByStatus?.failed_processing || 0,
+                failed_delivery: metricsResponse?.data?.jobsByStatus?.failed_delivery || 0,
+              },
+            });
             setLastUpdatedAt(new Date());
           } catch (error) {
             setOverviewError(
@@ -166,7 +247,7 @@
               setLoadingOverview(false);
             }
           }
-        }, []);
+        }, [appliedJobsStatusFilter]);
 
         const handleSendWebhook = useCallback(async () => {
           const selectedPipeline = pipelines.find((pipeline) => pipeline.id === selectedPipelineId);
@@ -231,6 +312,153 @@
             setSendingWebhook(false);
           }
         }, [idempotencyKey, loadOverview, pipelines, selectedPipelineId, webhookPayloadText]);
+
+        const handleApplyJobsFilter = useCallback(async () => {
+          setAppliedJobsStatusFilter(jobsStatusFilter);
+          setOverviewError("");
+
+          try {
+            const jobsPath = jobsStatusFilter
+              ? `/jobs?status=${encodeURIComponent(jobsStatusFilter)}&page=1&limit=100`
+              : "/jobs?page=1&limit=100";
+
+            const jobsResponse = await fetchJson(jobsPath);
+            setJobs(Array.isArray(jobsResponse?.data) ? jobsResponse.data : []);
+          } catch (error) {
+            setOverviewError(
+              error?.message ||
+                "Failed to load dashboard data. Check API availability and CORS settings.",
+            );
+          }
+        }, [jobsStatusFilter]);
+
+        const resetCreatePipelineForm = useCallback(() => {
+          setCreatePipelineName("");
+          setCreatePipelineWebhookPath("");
+          setCreatePipelineDescription("");
+          setCreatePipelineStatus("paused");
+          setCreatePipelineActionType("transform");
+          setCreatePipelineActionConfigText("{}");
+          setCreatePipelineSubscriberUrl("");
+          setCreatePipelineError("");
+        }, []);
+
+        const handleOpenCreatePipelineModal = useCallback(() => {
+          setCreatePipelineResult(null);
+          setCreatePipelineError("");
+          setShowCreatePipelineModal(true);
+        }, []);
+
+        const handleCloseCreatePipelineModal = useCallback(() => {
+          setShowCreatePipelineModal(false);
+          setCreatePipelineError("");
+        }, []);
+
+        const handleCreatePipeline = useCallback(async () => {
+          const name = createPipelineName.trim();
+          const webhookPath = createPipelineWebhookPath.trim();
+          const description = createPipelineDescription.trim();
+          const subscriberUrl = createPipelineSubscriberUrl.trim();
+
+          if (!name) {
+            setCreatePipelineError("Pipeline name is required.");
+            return;
+          }
+
+          if (!webhookPath) {
+            setCreatePipelineError("Webhook path is required.");
+            return;
+          }
+
+          if (!subscriberUrl) {
+            setCreatePipelineError("Subscriber URL is required.");
+            return;
+          }
+
+          let parsedActionConfig;
+          try {
+            parsedActionConfig = JSON.parse(createPipelineActionConfigText);
+          } catch (_error) {
+            setCreatePipelineError("Action config must be valid JSON.");
+            return;
+          }
+
+          if (
+            parsedActionConfig === null ||
+            Array.isArray(parsedActionConfig) ||
+            typeof parsedActionConfig !== "object"
+          ) {
+            setCreatePipelineError("Action config must be a JSON object.");
+            return;
+          }
+
+          setCreatingPipeline(true);
+          setCreatePipelineError("");
+
+          try {
+            const requestBody = {
+              name,
+              webhookPath,
+              description: description || undefined,
+              status: createPipelineStatus,
+              actions: [
+                {
+                  orderIndex: 1,
+                  actionType: createPipelineActionType,
+                  config: parsedActionConfig,
+                  enabled: true,
+                },
+              ],
+              subscribers: [
+                {
+                  targetUrl: subscriberUrl,
+                  enabled: true,
+                },
+              ],
+            };
+
+            const response = await fetch(`${API_BASE}/pipelines`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(requestBody),
+            });
+
+            let json = null;
+            try {
+              json = await response.json();
+            } catch (_error) {
+              // Ignore parse errors and use fallback below.
+            }
+
+            if (!response.ok) {
+              throw new Error(json?.error?.message || `Request failed: ${response.status}`);
+            }
+
+            setCreatePipelineResult({
+              type: "success",
+              message: `Pipeline created: ${json?.data?.name || name}`,
+            });
+            setShowCreatePipelineModal(false);
+            resetCreatePipelineForm();
+            await loadOverview(false);
+          } catch (error) {
+            setCreatePipelineError(error?.message || "Failed to create pipeline.");
+          } finally {
+            setCreatingPipeline(false);
+          }
+        }, [
+          createPipelineActionConfigText,
+          createPipelineActionType,
+          createPipelineDescription,
+          createPipelineName,
+          createPipelineStatus,
+          createPipelineSubscriberUrl,
+          createPipelineWebhookPath,
+          loadOverview,
+          resetCreatePipelineForm,
+        ]);
 
         const activePipelines = pipelines.filter((pipeline) => pipeline.status === "active");
 
@@ -310,6 +538,37 @@
                   <StatCard label="Total Jobs" value={stats.totalJobs} />
                   <StatCard label="Completed Jobs" value={stats.completedJobs} />
                   <StatCard label="Failed Jobs" value={stats.failedJobs} />
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <StatCard label="Active Pipelines" value={metrics.activePipelines} />
+                  <StatCard label="Successful Deliveries" value={metrics.successfulDeliveries} />
+                  <StatCard label="Failed Deliveries" value={metrics.failedDeliveries} />
+                  <StatCard label="Total Delivery Attempts" value={metrics.totalDeliveryAttempts} />
+                </div>
+
+                <div className="mt-4">
+                  <p className="mb-2 text-sm font-medium text-slate-700">Jobs by Status</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      queued: {metrics.jobsByStatus.queued}
+                    </span>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                      processing: {metrics.jobsByStatus.processing}
+                    </span>
+                    <span className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700">
+                      processed: {metrics.jobsByStatus.processed}
+                    </span>
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      completed: {metrics.jobsByStatus.completed}
+                    </span>
+                    <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                      failed_processing: {metrics.jobsByStatus.failed_processing}
+                    </span>
+                    <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                      failed_delivery: {metrics.jobsByStatus.failed_delivery}
+                    </span>
+                  </div>
                 </div>
 
                 {lastUpdatedAt && (
@@ -409,7 +668,22 @@
               )}
 
               <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="mb-4 text-lg font-semibold">Pipelines</h2>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Pipelines</h2>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreatePipelineModal}
+                    className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                  >
+                    Create Pipeline
+                  </button>
+                </div>
+
+                {createPipelineResult?.type === "success" && (
+                  <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                    {createPipelineResult.message}
+                  </div>
+                )}
 
                 {pipelines.length === 0 ? (
                   <p className="text-sm text-slate-500">No pipelines found.</p>
@@ -457,6 +731,39 @@
               <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="mb-4 text-lg font-semibold">Jobs</h2>
 
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Status
+                      </label>
+                      <select
+                        value={jobsStatusFilter}
+                        onChange={(event) => setJobsStatusFilter(event.target.value)}
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 sm:w-56"
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="queued">queued</option>
+                        <option value="processing">processing</option>
+                        <option value="processed">processed</option>
+                        <option value="completed">completed</option>
+                        <option value="failed_processing">failed_processing</option>
+                        <option value="failed_delivery">failed_delivery</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleApplyJobsFilter}
+                      className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                    >
+                      Filter
+                    </button>
+                  </div>
+
+                  <p className="text-sm text-slate-500">Showing {jobs.length} jobs</p>
+                </div>
+
                 {jobs.length === 0 ? (
                   <p className="text-sm text-slate-500">No jobs found.</p>
                 ) : (
@@ -491,6 +798,50 @@
                               <StatusBadge value={job.status} classes={JOB_STATUS_BADGES} />
                             </td>
                             <td className="px-3 py-2">{formatDate(job.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Dead Letter Queue</h2>
+                  <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                    {deadLetterJobs.length}
+                  </span>
+                </div>
+
+                {deadLetterJobs.length === 0 ? (
+                  <p className="text-sm text-slate-500">No failed jobs</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">Job ID</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Pipeline ID
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Created At
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                            Delivery Attempts
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {deadLetterJobs.map((job) => (
+                          <tr key={job.id}>
+                            <td className="px-3 py-2 font-mono text-xs">{shortId(job.id)}</td>
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {shortId(job.pipeline_id)}
+                            </td>
+                            <td className="px-3 py-2">{formatDate(job.created_at)}</td>
+                            <td className="px-3 py-2">{job.deliveryAttemptsCount}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -620,6 +971,131 @@
                 )}
               </section>
             </main>
+
+            {showCreatePipelineModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900">Create Pipeline</h3>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Pipeline Name
+                      </label>
+                      <input
+                        type="text"
+                        value={createPipelineName}
+                        onChange={(event) => setCreatePipelineName(event.target.value)}
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Webhook Path
+                      </label>
+                      <input
+                        type="text"
+                        value={createPipelineWebhookPath}
+                        onChange={(event) => setCreatePipelineWebhookPath(event.target.value)}
+                        placeholder="e.g. my-pipeline"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Description
+                      </label>
+                      <textarea
+                        value={createPipelineDescription}
+                        onChange={(event) => setCreatePipelineDescription(event.target.value)}
+                        rows={3}
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
+                        <select
+                          value={createPipelineStatus}
+                          onChange={(event) => setCreatePipelineStatus(event.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                        >
+                          <option value="paused">paused</option>
+                          <option value="active">active</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">
+                          Action Type
+                        </label>
+                        <select
+                          value={createPipelineActionType}
+                          onChange={(event) => setCreatePipelineActionType(event.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                        >
+                          <option value="transform">transform</option>
+                          <option value="enrich">enrich</option>
+                          <option value="filter">filter</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Action Config
+                      </label>
+                      <textarea
+                        value={createPipelineActionConfigText}
+                        onChange={(event) => setCreatePipelineActionConfigText(event.target.value)}
+                        rows={4}
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Subscriber URL
+                      </label>
+                      <input
+                        type="text"
+                        value={createPipelineSubscriberUrl}
+                        onChange={(event) => setCreatePipelineSubscriberUrl(event.target.value)}
+                        placeholder="https://example.com/webhook"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+                      />
+                    </div>
+
+                    {createPipelineError && (
+                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        Error: {createPipelineError}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={handleCloseCreatePipelineModal}
+                        className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreatePipeline}
+                        disabled={creatingPipeline}
+                        className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {creatingPipeline ? "Creating..." : "Create"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
