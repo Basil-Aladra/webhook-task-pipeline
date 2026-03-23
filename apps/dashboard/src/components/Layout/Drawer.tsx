@@ -8,13 +8,23 @@ type DrawerProps = {
 };
 
 export function Drawer({ isOpen, onClose, children, className = "" }: DrawerProps): JSX.Element {
+  const blurActiveElement = () => {
+    const activeElement = document.activeElement;
+
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) {
+      blurActiveElement();
       return;
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        blurActiveElement();
         onClose();
       }
     };
@@ -39,7 +49,10 @@ export function Drawer({ isOpen, onClose, children, className = "" }: DrawerProp
       <button
         type="button"
         aria-label="Close drawer"
-        onClick={onClose}
+        onClick={() => {
+          blurActiveElement();
+          onClose();
+        }}
         className="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]"
       />
 

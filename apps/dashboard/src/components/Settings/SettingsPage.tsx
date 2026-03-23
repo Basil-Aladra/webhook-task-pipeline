@@ -130,7 +130,12 @@ export function SettingsPage({
               <p className="ui-subtitle">Manage API access used by the dashboard</p>
             </div>
 
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+              }}
+            >
               <div>
                 <label htmlFor="settings-api-key" className="mb-1 block text-sm font-medium text-slate-700">
                   API Key
@@ -163,7 +168,7 @@ export function SettingsPage({
                   {copyFeedback}
                 </div>
               )}
-            </div>
+            </form>
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

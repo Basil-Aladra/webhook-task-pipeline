@@ -58,11 +58,14 @@ export function LogsPage({
   onRefresh,
   onClearFilters,
 }: LogsPageProps): JSX.Element {
+  const safeLogsPipelineFilter = logsPipelineFilter ?? "";
+  const safeLogsSearchText = logsSearchText ?? "";
+
   const activeFilters = [
     logsLevelFilter ? `Level: ${logsLevelFilter}` : "",
     logsSourceFilter ? `Source: ${logsSourceFilter}` : "",
-    logsPipelineFilter.trim() ? `Pipeline: ${logsPipelineFilter.trim()}` : "",
-    logsSearchText.trim() ? `Search: ${logsSearchText.trim()}` : "",
+    safeLogsPipelineFilter.trim() ? `Pipeline: ${safeLogsPipelineFilter.trim()}` : "",
+    safeLogsSearchText.trim() ? `Search: ${safeLogsSearchText.trim()}` : "",
   ].filter(Boolean);
 
   return (
@@ -120,7 +123,7 @@ export function LogsPage({
             <label className="mb-1 block text-sm font-medium text-slate-700">Search</label>
             <input
               type="text"
-              value={logsSearchText}
+              value={safeLogsSearchText}
               onChange={(event) => setLogsSearchText(event.target.value)}
               placeholder="message, job id, pipeline id..."
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
@@ -131,7 +134,7 @@ export function LogsPage({
             <label className="mb-1 block text-sm font-medium text-slate-700">Pipeline ID</label>
             <input
               type="text"
-              value={logsPipelineFilter}
+              value={safeLogsPipelineFilter}
               onChange={(event) => setLogsPipelineFilter(event.target.value)}
               placeholder="optional pipeline UUID"
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
