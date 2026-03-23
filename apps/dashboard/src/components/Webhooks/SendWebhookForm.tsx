@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { API_BASE } from "../../api/client";
 import { PipelineListItem } from "../../hooks/useDashboard";
 import { useToast } from "../Toast/ToastProvider";
 
@@ -34,6 +35,16 @@ export function SendWebhookForm({
 }: SendWebhookFormProps): JSX.Element {
   const { showToast } = useToast();
   const lastToastKeyRef = useRef<string>("");
+  const selectedPipeline = activePipelines.find((pipeline) => pipeline.id === selectedPipelineId) || null;
+  const selectedWebhookUrl = selectedPipeline
+    ? `${API_BASE}/webhooks/${encodeURIComponent(selectedPipeline.webhookPath)}`
+    : "";
+  const demoPayload = `{
+  "orderId": "demo-1001",
+  "customerName": "Alice",
+  "amount": 42.5,
+  "status": "new"
+}`;
 
   useEffect(() => {
     if (!sendResult) {
@@ -51,6 +62,34 @@ export function SendWebhookForm({
       message: sendResult.type === "error" ? `Error: ${sendResult.message}` : sendResult.message,
     });
   }, [sendResult, showToast]);
+
+  async function handleCopyWebhookUrl(): Promise<void> {
+    if (!selectedWebhookUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(selectedWebhookUrl);
+      showToast({
+        type: "success",
+        message: "Webhook URL copied.",
+      });
+    } catch {
+      showToast({
+        type: "error",
+        message: "Failed to copy webhook URL.",
+      });
+    }
+  }
+
+  function handleLoadDemoPayload(): void {
+    setWebhookPayloadText(demoPayload);
+    setIdempotencyKey(`demo-${Date.now()}`);
+    showToast({
+      type: "info",
+      message: "Demo payload loaded.",
+    });
+  }
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -79,6 +118,33 @@ export function SendWebhookForm({
               No active pipelines available. Activate one from the Pipelines API.
             </p>
           )}
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Demo Helper</p>
+              <p className="mt-1 text-sm text-slate-700">
+                Use the selected pipeline endpoint and a ready-to-send sample payload.
+              </p>
+              <p className="mt-2 break-all rounded-md bg-white px-3 py-2 font-mono text-xs text-slate-700">
+                {selectedWebhookUrl || "Select an active pipeline to reveal its webhook URL."}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleCopyWebhookUrl()}
+                disabled={!selectedWebhookUrl}
+                className="ui-btn-secondary"
+              >
+                Copy Webhook URL
+              </button>
+              <button type="button" onClick={handleLoadDemoPayload} className="ui-btn-secondary">
+                Load Demo Payload
+              </button>
+            </div>
+          </div>
         </div>
 
         <div>
