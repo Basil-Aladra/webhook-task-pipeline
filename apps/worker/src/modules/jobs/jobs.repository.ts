@@ -172,3 +172,95 @@ export async function addJobStatusHistory(
 
   await db.query(query, [jobId, fromStatus, toStatus, reason, actor]);
 }
+
+// Loads a job for worker internal orchestration.
+export async function getJobById(jobId: string, db: Queryable = pool): Promise<Job | null> {
+  const query = `
+    SELECT
+      id,
+      pipeline_id,
+      status,
+      payload,
+      idempotency_key,
+      available_at,
+      locked_at,
+      locked_by,
+      lock_expires_at,
+      processing_attempt_count,
+      result_payload,
+      last_error,
+      received_at,
+      started_at,
+      completed_at,
+      created_at,
+      updated_at
+    FROM jobs
+    WHERE id = $1
+    LIMIT 1
+  `;
+
+  const result = await db.query<DatabaseJobRow>(query, [jobId]);
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return mapDatabaseJob(result.rows[0]);
+}
+
+export type JobDeliveryOutcome = {
+  currentStatus: JobStatus;
+  enabledSubscribersCount: number;
+  succeededSubscribersCount: number;
+  hasFailedFinal: boolean;
+};
+
+// Computes whether delivery retry attempts have moved the job into completed/failed_delivery.
+export async function computeDeliveryOutcomeForJob(
+  jobId: string,
+  db: Queryable = pool,
+): Promise<JobDeliveryOutcome | null> {
+  const query = `
+    SELECT
+      j.status AS status,
+      (
+        SELECT COUNT(*)::int
+        FROM pipeline_subscribers ps
+        WHERE ps.pipeline_id = j.pipeline_id
+          AND ps.enabled = true
+      ) AS enabled_subscribers_count,
+      (
+        SELECT COUNT(DISTINCT da.subscriber_id)::int
+        FROM delivery_attempts da
+        WHERE da.job_id = j.id
+          AND da.status = 'succeeded'
+      ) AS succeeded_subscribers_count,
+      EXISTS (
+        SELECT 1
+        FROM delivery_attempts da
+        WHERE da.job_id = j.id
+          AND da.status = 'failed_final'
+      ) AS has_failed_final
+    FROM jobs j
+    WHERE j.id = $1
+    LIMIT 1
+  `;
+
+  type DeliveryOutcomeRow = {
+    status: JobStatus;
+    enabled_subscribers_count: number;
+    succeeded_subscribers_count: number;
+    has_failed_final: boolean;
+  };
+
+  const result = await db.query<DeliveryOutcomeRow>(query, [jobId]);
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return {
+    currentStatus: result.rows[0].status,
+    enabledSubscribersCount: result.rows[0].enabled_subscribers_count,
+    succeededSubscribersCount: result.rows[0].succeeded_subscribers_count,
+    hasFailedFinal: result.rows[0].has_failed_final,
+  };
+}

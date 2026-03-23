@@ -1,17 +1,136 @@
 import { logger } from '../../shared/logger';
 
-import { getPipelineSubscribers } from '../../db/pipelines.repository';
-import { deliverJobResults } from '../delivery/delivery.service';
-import { addJobStatusHistory, fetchNextJob, updateJobStatus } from '../jobs/jobs.repository';
+import { getPipelineSubscribers, getSubscriberById } from '../../db/pipelines.repository';
+import {
+  deliverJobResults,
+  deliverToSubscriber,
+} from '../delivery/delivery.service';
+import {
+  addJobStatusHistory,
+  computeDeliveryOutcomeForJob,
+  fetchNextJob,
+  getJobById,
+  updateJobStatus,
+} from '../jobs/jobs.repository';
 import { JobStatus } from '../jobs/jobs.types';
 import { processJob } from './worker.service';
+import { claimNextRetryableDeliveryAttempt } from '../delivery/delivery.repository';
 
 const workerActor = 'worker';
 let isPolling = false;
 let emptyPollCount = 0;
 
+async function pollDeliveryRetries(): Promise<boolean> {
+  const claimedAttempt = await claimNextRetryableDeliveryAttempt();
+  if (!claimedAttempt) {
+    return false;
+  }
+
+  const job = await getJobById(claimedAttempt.jobId);
+  if (!job) {
+    logger.warn('Retry skipped: job not found', {
+      jobId: claimedAttempt.jobId,
+      attemptId: claimedAttempt.attemptId,
+    });
+    return true;
+  }
+
+  if (!job.resultPayload) {
+    logger.warn('Retry skipped: job has no result payload yet', {
+      jobId: job.id,
+      attemptId: claimedAttempt.attemptId,
+    });
+    return true;
+  }
+
+  const subscriber = await getSubscriberById(claimedAttempt.subscriberId);
+  if (!subscriber) {
+    logger.warn('Retry skipped: subscriber not found', {
+      subscriberId: claimedAttempt.subscriberId,
+      attemptId: claimedAttempt.attemptId,
+    });
+    return true;
+  }
+
+  if (!subscriber.enabled) {
+    logger.warn('Retry skipped: subscriber disabled', {
+      subscriberId: subscriber.id,
+      attemptId: claimedAttempt.attemptId,
+    });
+    return true;
+  }
+
+  logger.info('Retry delivery started', {
+    jobId: job.id,
+    pipelineId: job.pipelineId,
+    subscriberId: subscriber.id,
+    previousFailedAttemptId: claimedAttempt.attemptId,
+    previousFailedAttemptNo: claimedAttempt.attemptNo,
+  });
+
+  await deliverToSubscriber(job, subscriber, job.resultPayload);
+
+  const deliveryOutcome = await computeDeliveryOutcomeForJob(job.id);
+  if (!deliveryOutcome) {
+    return true;
+  }
+
+  const { currentStatus, enabledSubscribersCount, succeededSubscribersCount, hasFailedFinal } =
+    deliveryOutcome;
+
+  let targetStatus: JobStatus | null = null;
+  if (hasFailedFinal) {
+    targetStatus = JobStatus.FailedDelivery;
+  } else if (
+    succeededSubscribersCount === enabledSubscribersCount
+  ) {
+    targetStatus = JobStatus.Completed;
+  }
+
+  if (targetStatus && targetStatus !== currentStatus) {
+    if (targetStatus === JobStatus.Completed) {
+      await updateJobStatus(job.id, JobStatus.Completed, {
+        completedAt: new Date(),
+      });
+
+      await addJobStatusHistory(
+        job.id,
+        currentStatus,
+        JobStatus.Completed,
+        null,
+        workerActor,
+      );
+    } else if (targetStatus === JobStatus.FailedDelivery) {
+      await updateJobStatus(job.id, JobStatus.FailedDelivery, {
+        lastError: {
+          message: 'One or more subscribers failed permanently.',
+          jobId: job.id,
+        },
+        completedAt: new Date(),
+      });
+
+      await addJobStatusHistory(
+        job.id,
+        currentStatus,
+        JobStatus.FailedDelivery,
+        'One or more subscribers failed permanently.',
+        workerActor,
+      );
+    }
+  }
+
+  return true;
+}
+
 // Polls once: tries to reserve and process exactly one queued job.
 export async function poll(): Promise<void> {
+  // 1) Retry due failed delivery attempts first.
+  const didRetry = await pollDeliveryRetries();
+  if (didRetry) {
+    return;
+  }
+
+  // 2) Otherwise, pick up the next queued processing job.
   const job = await fetchNextJob();
 
   if (!job) {
@@ -32,6 +151,15 @@ export async function poll(): Promise<void> {
     jobId: job.id,
     pipelineId: job.pipelineId,
   });
+
+  // Record the reservation transition so the history timeline is complete.
+  await addJobStatusHistory(
+    job.id,
+    JobStatus.Queued,
+    JobStatus.Processing,
+    null,
+    workerActor,
+  );
 
   const result = await processJob(job);
 

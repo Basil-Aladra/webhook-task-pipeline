@@ -175,3 +175,43 @@ export async function getPipelineSubscribers(
     updatedAt: toIsoString(subscriber.updated_at),
   }));
 }
+
+// Fetches one subscriber endpoint and retry configuration by its row id.
+export async function getSubscriberById(
+  subscriberId: string,
+  db: Queryable = pool,
+): Promise<PipelineSubscriber | null> {
+  const query = `
+    SELECT
+      id,
+      pipeline_id,
+      target_url,
+      enabled,
+      timeout_ms,
+      max_retries,
+      retry_backoff_ms,
+      created_at,
+      updated_at
+    FROM pipeline_subscribers
+    WHERE id = $1
+    LIMIT 1
+  `;
+
+  const result = await db.query<PipelineSubscriberRow>(query, [subscriberId]);
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  const subscriber = result.rows[0];
+  return {
+    id: subscriber.id,
+    pipelineId: subscriber.pipeline_id,
+    targetUrl: subscriber.target_url,
+    enabled: subscriber.enabled,
+    timeoutMs: subscriber.timeout_ms,
+    maxRetries: subscriber.max_retries,
+    retryBackoffMs: subscriber.retry_backoff_ms,
+    createdAt: toIsoString(subscriber.created_at),
+    updatedAt: toIsoString(subscriber.updated_at),
+  };
+}

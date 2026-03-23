@@ -305,3 +305,44 @@ export async function getPendingDeliveries(
   const result = await db.query<DeliveryAttemptRow>(query, [jobId]);
   return result.rows.map(mapDeliveryAttempt);
 }
+
+export type ClaimedRetryableDeliveryAttempt = {
+  attemptId: number;
+  jobId: string;
+  subscriberId: string;
+  attemptNo: number;
+};
+
+// Claims (atomically) one due retryable delivery attempt so only one worker retries it.
+// We clear `next_retry_at` as a lightweight "claim marker" so other workers won't pick it up again.
+export async function claimNextRetryableDeliveryAttempt(
+  db: Queryable = pool,
+): Promise<ClaimedRetryableDeliveryAttempt | null> {
+  const query = `
+    UPDATE delivery_attempts
+    SET next_retry_at = NULL
+    WHERE id = (
+      SELECT id
+      FROM delivery_attempts
+      WHERE status = 'failed_retryable'
+        AND next_retry_at <= now()
+      ORDER BY next_retry_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, job_id, subscriber_id, attempt_no
+  `;
+
+  const result = await db.query<{ id: number; job_id: string; subscriber_id: string; attempt_no: number }>(query);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return {
+    attemptId: result.rows[0].id,
+    jobId: result.rows[0].job_id,
+    subscriberId: result.rows[0].subscriber_id,
+    attemptNo: result.rows[0].attempt_no,
+  };
+}
