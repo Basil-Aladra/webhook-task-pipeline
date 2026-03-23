@@ -14,6 +14,13 @@ type LogRow = {
   correlation_id: string | null;
 };
 
+const LOG_FILTER_SQL = {
+  level: 'level',
+  source: 'source',
+  jobId: 'job_id',
+  pipelineId: 'pipeline_id',
+} as const;
+
 export type LogListItem = {
   id: string;
   timestamp: string;
@@ -52,22 +59,23 @@ export async function getLogs(filters: ListLogsQuery): Promise<LogListItem[]> {
 
   if (filters.level) {
     values.push(filters.level);
-    whereClauses.push(`level = $${values.length}`);
+    // The column name comes from a strict allowlist, never directly from request input.
+    whereClauses.push(`${LOG_FILTER_SQL.level} = $${values.length}`);
   }
 
   if (filters.source) {
     values.push(filters.source);
-    whereClauses.push(`source = $${values.length}`);
+    whereClauses.push(`${LOG_FILTER_SQL.source} = $${values.length}`);
   }
 
   if (filters.jobId) {
     values.push(filters.jobId);
-    whereClauses.push(`job_id = $${values.length}`);
+    whereClauses.push(`${LOG_FILTER_SQL.jobId} = $${values.length}`);
   }
 
   if (filters.pipelineId) {
     values.push(filters.pipelineId);
-    whereClauses.push(`pipeline_id = $${values.length}`);
+    whereClauses.push(`${LOG_FILTER_SQL.pipelineId} = $${values.length}`);
   }
 
   if (filters.search) {

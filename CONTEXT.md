@@ -1,8 +1,11 @@
+# Project Features Overview
+This document tracks the implemented capabilities of the Webhook-Driven Task Processing Pipeline. It combines the baseline project context with feature-level notes so future contributors and AI assistants can understand the current backend, worker, security, and dashboard behavior without relying on assumptions.
+
 # CONTEXT.md
 
 ## 1. Project Overview
 - **Project name:** Webhook-Driven Task Processing Pipeline
-- **Purpose:** This monorepo implements a webhook ingestion system that accepts incoming events, stores them as jobs in PostgreSQL, processes them asynchronously in a worker, and delivers processed results to subscriber URLs with retry tracking. It also includes a React dashboard for monitoring pipelines, jobs, retries, metrics, logs-like timelines, and local UI settings.
+- **Purpose:** This monorepo implements a webhook ingestion system that accepts incoming events, stores them as jobs in PostgreSQL, processes them asynchronously in a worker, and delivers processed results to subscriber URLs with retry tracking. It also includes a React dashboard for monitoring pipelines, jobs, metrics, logs, worker health, security settings, and demo administration flows.
 - **Stack:** TypeScript, SQL, Express.js, React 18, Vite, Tailwind CSS, PostgreSQL, `pg`, Zod, Docker, Docker Compose, GitHub Actions, npm workspaces, Prettier.
 
 ## 2. Folder Structure
@@ -41,11 +44,20 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |  |     |  |  |- auth.controller.ts # API key creation handler
 |  |     |  |  |- auth.routes.ts     # POST /auth/keys
 |  |     |  |  |- auth.service.ts    # API key generation and hashing
+|  |     |  |- admin/
+|  |     |  |  |- admin.controller.ts # Demo/admin reset handler
+|  |     |  |  |- admin.repository.ts # Runtime-data reset SQL
+|  |     |  |  |- admin.routes.ts     # POST /admin/reset-runtime-data
 |  |     |  |- jobs/
 |  |     |  |  |- jobs.controller.ts # Job list/detail/dead-letter/retry handlers
 |  |     |  |  |- jobs.repository.ts # Job queries and manual retry mutation
 |  |     |  |  |- jobs.routes.ts     # Job routes
 |  |     |  |  |- jobs.types.ts      # Job query/path schemas
+|  |     |  |- logs/
+|  |     |  |  |- logs.controller.ts # Logs list handler
+|  |     |  |  |- logs.repository.ts # Logs filtering SQL
+|  |     |  |  |- logs.routes.ts     # GET /logs
+|  |     |  |  |- logs.types.ts      # Logs query schemas
 |  |     |  |- metrics/
 |  |     |  |  |- metrics.controller.ts # Metrics endpoint handler
 |  |     |  |  |- metrics.repository.ts # Aggregate metrics SQL
@@ -87,14 +99,19 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |  |     |  |  |- Drawer.tsx           # Reusable off-canvas drawer
 |  |     |  |  |- Header.tsx           # Sidebar navigation and quick API key field
 |  |     |  |- Logs/
-|  |     |  |  |- LogsPage.tsx         # Logs-like page derived from jobs + attempts
+|  |     |  |  |- LogsPage.tsx         # Logs page backed by GET /logs
 |  |     |  |- Pipelines/
 |  |     |  |  |- CreatePipelineModal.tsx # Create pipeline modal
+|  |     |  |  |- PipelineDetails.tsx     # Pipeline inspector drawer content
+|  |     |  |  |- PipelineSecretModal.tsx # Webhook secret management modal
 |  |     |  |  |- PipelinesTable.tsx      # Pipelines page table
 |  |     |  |- Settings/
 |  |     |  |  |- SettingsPage.tsx     # Local dashboard settings page
 |  |     |  |- Stats/
 |  |     |  |  |- StatsSection.tsx     # Overview metrics cards
+|  |     |  |- Toast/
+|  |     |  |  |- ToastProvider.tsx    # Minimal toast context/state
+|  |     |  |  |- ToastViewport.tsx    # Fixed top-right toast stack
 |  |     |  |- Webhooks/
 |  |     |     |- SendWebhookForm.tsx  # Quick webhook send form
 |  |     |- hooks/
@@ -111,8 +128,11 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |        |- modules/
 |        |  |- delivery/
 |        |  |  |- delivery.repository.ts # Delivery attempt persistence and claim logic
-|        |  |  |- delivery.service.ts    # Delivery orchestration and retry scheduling
+|        |  |  |- delivery.service.ts    # Delivery orchestration, retry scheduling, Discord formatting
 |        |  |  |- http.client.ts         # Built-in fetch wrapper with timeout
+|        |  |- health/
+|        |  |  |- worker-health.server.ts # Internal worker health HTTP endpoint
+|        |  |  |- worker-health.ts        # In-memory worker heartbeat state
 |        |  |- jobs/
 |        |  |  |- jobs.recovery.test.ts  # Focused stale-job recovery test
 |        |  |  |- jobs.repository.ts     # Job pickup, recovery, status updates
@@ -139,6 +159,7 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |     |  |- 006_create_delivery_attempts.sql
 |     |  |- 007_add_webhook_secret.sql
 |     |  |- 008_create_api_keys.sql
+|     |  |- 009_create_logs.sql          # Persisted structured logs
 |     |- seeds/
 |        |- 001_demo_pipeline.sql      # Demo pipeline, actions, subscriber seed
 |- packages/
@@ -181,6 +202,7 @@ PostgreSQL
   jobs
   job_status_history
   delivery_attempts
+  logs
   api_keys
     |
     v
@@ -285,6 +307,17 @@ Subscriber URLs
 - `last_used_at TIMESTAMPTZ`
 - `revoked_at TIMESTAMPTZ`
 
+#### `logs`
+- `id BIGSERIAL PRIMARY KEY`
+- `timestamp TIMESTAMPTZ NOT NULL DEFAULT now()`
+- `level TEXT NOT NULL CHECK (level IN ('info','warn','error'))`
+- `source TEXT NOT NULL CHECK (source IN ('api','worker','delivery','system'))`
+- `message TEXT NOT NULL`
+- `job_id UUID`
+- `pipeline_id UUID`
+- `correlation_id TEXT`
+- `context JSONB NOT NULL DEFAULT '{}'::jsonb`
+
 ### Relationships
 - `pipeline_actions.pipeline_id -> pipelines.id`
 - `pipeline_subscribers.pipeline_id -> pipelines.id`
@@ -292,6 +325,7 @@ Subscriber URLs
 - `job_status_history.job_id -> jobs.id`
 - `delivery_attempts.job_id -> jobs.id`
 - `delivery_attempts.subscriber_id -> pipeline_subscribers.id`
+- `logs` stores optional references to `job_id` and `pipeline_id` but does not currently declare foreign keys for them in SQL
 
 ### Constraints and Indexes
 - `CREATE EXTENSION IF NOT EXISTS pgcrypto`
@@ -304,6 +338,10 @@ Subscriber URLs
   - `jobs_pipeline_id_created_at_idx` on `(pipeline_id, created_at)`
   - `job_status_history_job_id_changed_at_idx` on `(job_id, changed_at)`
   - `delivery_attempts_job_id_status_next_retry_at_idx` on `(job_id, status, next_retry_at)`
+  - `idx_logs_timestamp_desc` on `(timestamp DESC)`
+  - `idx_logs_level_source_timestamp` on `(level, source, timestamp DESC)`
+  - `idx_logs_job_id_timestamp` on `(job_id, timestamp DESC)`
+  - `idx_logs_pipeline_id_timestamp` on `(pipeline_id, timestamp DESC)`
 
 ## 5. API Endpoints
 
@@ -317,13 +355,17 @@ Subscriber URLs
 | `PATCH` | `/api/v1/pipelines/:pipelineId` | Partial pipeline update; requires `x-api-key` | Any subset of `{ name, webhookPath, description, webhookSecret, status }` | `200 { data: pipeline }` |
 | `PUT` | `/api/v1/pipelines/:pipelineId/actions` | Replace all actions for a pipeline; requires `x-api-key` | `{ actions: [...] }` | `200 { data: pipeline }` |
 | `PUT` | `/api/v1/pipelines/:pipelineId/subscribers` | Replace all subscribers for a pipeline; requires `x-api-key` | `{ subscribers: [...] }` | `200 { data: pipeline }` |
+| `POST` | `/api/v1/pipelines/:pipelineId/webhook-secret/rotate` | Generate or rotate a pipeline webhook secret; requires `x-api-key` | None | `200 { data: { pipelineId, webhookSecret, hasWebhookSecret } }` |
 | `DELETE` | `/api/v1/pipelines/:pipelineId` | Soft-delete by archiving pipeline; requires `x-api-key` | None | `200 { data: archivedPipeline }` |
 | `POST` | `/api/v1/webhooks/:webhookPath` | Public webhook ingestion; rate-limited; optional signature verification | `{ payload: object, idempotencyKey? }` | `202 { data: { jobId, status: "queued", message } }` |
 | `GET` | `/api/v1/jobs` | List jobs; requires `x-api-key` | Query: `pipelineId?`, `status?`, `page`, `limit` | `200 { data: jobs[], meta }` |
 | `GET` | `/api/v1/jobs/dead-letter` | List jobs with `failed_delivery`; requires `x-api-key` | None | `200 { data: deadLetterJobs[], meta: { total } }` |
 | `GET` | `/api/v1/jobs/:jobId` | Get full job details; requires `x-api-key` | None | `200 { data: jobWithStatusHistoryAndDeliveryAttempts }` |
 | `POST` | `/api/v1/jobs/:jobId/retry` | Manually retry `failed_processing` or `failed_delivery` jobs; requires `x-api-key` | None | `200 { data: { jobId, status, message } }` |
+| `GET` | `/api/v1/logs` | Query persisted structured logs; requires `x-api-key` | Query: `level?`, `source?`, `jobId?`, `pipelineId?`, `search?`, `limit` | `200 { data: logs[], meta: { total, limit } }` |
 | `GET` | `/api/v1/metrics` | Aggregate dashboard metrics; requires `x-api-key` | None | `200 { data: metrics }` |
+| `GET` | `/api/v1/worker/health` | Proxy worker heartbeat/uptime info; requires `x-api-key` | None | `200 { data: { status, workerId, lastHeartbeat, uptimeSeconds } }` |
+| `POST` | `/api/v1/admin/reset-runtime-data` | Delete runtime demo data while keeping pipelines/config; requires `x-api-key` | None | `200 { data: { deletedDeliveryAttempts, deletedJobStatusHistory, deletedJobs, deletedLogs, message } }` |
 
 Common error shape:
 
@@ -431,52 +473,42 @@ Common error shape:
 ## 8. Current Status
 
 ### Fully implemented and working in code
-- PostgreSQL schema migrations and demo seed
-- Express API bootstrap, CORS, rate limiting, API key auth, webhook signature verification
+- PostgreSQL schema migrations for pipelines, subscribers, jobs, delivery attempts, webhook secrets, API keys, and persisted logs
+- Express API bootstrap with CORS, rate limiting, API key auth, and webhook signature verification
 - API key generation endpoint
-- Full pipeline CRUD API
+- Full pipeline CRUD API, including action/subscriber replacement and webhook secret rotation
 - Queue-only webhook ingestion with idempotency support
-- Job list/detail/dead-letter APIs
-- Metrics API
-- Manual retry API for failed jobs
-- Worker polling, job reservation, action processing, delivery attempts, retry scheduling
-- Stale processing job recovery with status-history recording
-- Two-worker Docker Compose setup
-- React dashboard with pages for:
-  - Overview
-  - Pipelines
-  - Jobs
-  - Dead Letters
-  - Logs
-  - Settings
-- Retry action exposed in dashboard Job Inspector and Dead Letter page
+- Job list/detail/dead-letter APIs, manual retry API, and job lifecycle history
+- Metrics API, persisted Logs API, worker health API, and demo reset API
+- Worker polling, job reservation, stale-lock recovery, ordered action processing, delivery attempts, retry scheduling, and Discord webhook formatting
+- Structured logging persisted to PostgreSQL from API and worker
+- React dashboard with pages for Overview, Pipelines, Jobs, Dead Letters, Logs, and Settings
+- Drawer-based Job Details and Pipeline Details inspectors
+- Webhook secret management, pipeline status toggle, advanced filtering, toast notifications, and reset-demo-data flow in the dashboard
 - CI typechecks/builds API, worker, and dashboard, then builds Docker images
 
 ### Partially implemented
-- `packages/shared` exists, but API and worker use duplicated local logger files in `apps/api/src/shared/logger.ts` and `apps/worker/src/shared/logger.ts` instead of importing the workspace package.
-- The Logs page is not backed by a real logs API. It synthesizes log entries from `jobs/:id` status history and delivery attempts.
-- Settings page includes worker status, but it is a static `Unknown` badge because no worker health endpoint exists.
-- Retry settings in the dashboard are local preferences only; they do not update pipeline subscriber retry config in the database.
-- `webhookSecret` can be created/updated through the pipeline API, but pipeline read responses and the dashboard do not expose it.
-- Legacy static dashboard file `apps/dashboard/index.html` still exists even though the React/Vite app in `apps/dashboard/src` is now the primary UI.
+- `packages/shared` exists, but API and worker still use duplicated local logger files in `apps/api/src/shared/logger.ts` and `apps/worker/src/shared/logger.ts`.
+- Retry settings in the dashboard Settings page are local UI preferences only; they do not change subscriber retry configuration stored in PostgreSQL.
+- Legacy static dashboard file `apps/dashboard/index.html` still exists even though the React/Vite app in `apps/dashboard/src` is the primary UI.
+- Worker health is proxied from a small internal worker HTTP server rather than being stored centrally.
 
 ### Planned or implied but not yet built
-- No dedicated backend `/logs` endpoint
-- No worker health endpoint
 - No migration tracking table
-- No formal automated test suite beyond `jobs.recovery.test.ts`
-- No subscriber authentication settings beyond basic target URL + retry config
+- No broad automated integration/E2E test suite beyond targeted typechecks and `jobs.recovery.test.ts`
+- No subscriber authentication configuration beyond target URL and retry settings
+- No per-user auth/RBAC model beyond shared API keys
 
 ## 9. Known Issues
-- **Polling implementation differs from intended pattern:** the worker uses `setInterval`, not recursive `setTimeout`, in `worker.runner.ts`. The `isPolling` guard avoids overlap, but long polls can cause skipped intervals rather than rescheduling immediately after completion.
-- **Fixed lock expiry with no heartbeat:** `fetchNextJob()` gives a 5-minute lock and `recoverExpiredProcessingJobs()` re-queues expired jobs. Long-running jobs can be recovered too aggressively if they exceed the lock duration.
+- **Polling implementation uses `setInterval`:** `worker.runner.ts` uses `setInterval` plus an `isPolling` guard. It is safe for this project, but long polls can cause skipped intervals rather than rescheduling immediately after completion.
+- **Fixed lock expiry plus separate heartbeat systems:** job locks and worker health heartbeats are separate concerns. A very long-running job can still be re-queued if it exceeds the 5-minute job lock TTL.
 - **No migration bookkeeping:** `migrate.ts` reruns all SQL files every startup and relies entirely on idempotent SQL. This works now, but it is weaker than storing applied migrations.
 - **Auth validation error handling is too broad:** `apps/api/src/modules/auth/auth.controller.ts` catches all errors and returns `500`, including invalid request bodies that should likely be `422`.
 - **API key bootstrap endpoint is open:** `POST /api/v1/auth/keys` is intentionally unauthenticated. In a real deployment that should be gated or limited.
 - **Shared logger duplication:** `packages/shared/src/logger.ts`, `apps/api/src/shared/logger.ts`, and `apps/worker/src/shared/logger.ts` duplicate the same structured logger implementation.
 - **Dashboard API base URL is hardcoded:** `apps/dashboard/src/api/client.ts` always uses `http://localhost:3000/api/v1`, which is fine for local demo use but not flexible for environments.
 - **Worker package includes unused dependencies:** `express`, `uuid`, and `zod` are listed in `apps/worker/package.json` but are not used by the worker code.
-- **Dead-letter route is implemented but not used by the dashboard:** the dashboard dead-letter page currently derives data from `/jobs?status=failed_delivery` and per-job lookups instead of calling `/jobs/dead-letter`.
+- **Worker health proxy depends on reachable internal worker URL:** `GET /api/v1/worker/health` tries configured candidate URLs and returns `unknown` if the worker health server is unreachable.
 
 ## 10. Rules for AI Assistants
 - Always use TypeScript for new application code.
@@ -520,3 +552,269 @@ When a user clicks the toggle action, the dashboard computes the next status (`a
 
 ### Demo Usage
 Open `#/pipelines`, click `Activate` on a paused pipeline or `Pause` on an active pipeline, and show the success toast plus the immediate status update in the table. Then open the same pipeline in the drawer and demonstrate the same toggle from the quick-actions section.
+
+## Feature: Webhook Ingestion and Pipeline System
+
+### Description
+The system accepts webhooks through per-pipeline public endpoints, validates them, optionally verifies an HMAC signature, and queues them for asynchronous processing instead of handling them inline.
+
+### Backend Changes
+- `POST /api/v1/pipelines`, `GET /api/v1/pipelines`, `GET /api/v1/pipelines/:pipelineId`, `PATCH /api/v1/pipelines/:pipelineId`, `PUT /api/v1/pipelines/:pipelineId/actions`, `PUT /api/v1/pipelines/:pipelineId/subscribers`, `DELETE /api/v1/pipelines/:pipelineId`
+- `POST /api/v1/webhooks/:webhookPath`
+- Pipeline CRUD logic in `apps/api/src/modules/pipelines/*`
+- Queue-only webhook ingestion in `apps/api/src/modules/webhooks/*`
+- Optional HMAC verification in `apps/api/src/middleware/verifyWebhookSignature.ts`
+
+### Frontend Changes
+- Pipelines management page in `apps/dashboard/src/components/Pipelines/PipelinesTable.tsx`
+- Create pipeline modal in `apps/dashboard/src/components/Pipelines/CreatePipelineModal.tsx`
+- Quick Send Webhook form in `apps/dashboard/src/components/Webhooks/SendWebhookForm.tsx`
+
+### How it works
+Each pipeline defines a `webhook_path`, processing actions, and subscriber endpoints. A webhook request is validated, optionally verified against `webhook_secret`, inserted into `jobs` with `queued` status, and returned as `202 Accepted` without synchronous processing.
+
+### Demo Usage
+Create a pipeline in the dashboard, copy its webhook path, send a webhook from the Overview page, and show that the API immediately queues the job instead of processing it inline.
+
+## Feature: Job Queue and Background Worker Processing
+
+### Description
+Queued jobs are processed by the worker service, which claims work safely from PostgreSQL, runs pipeline actions in order, and persists processing results.
+
+### Backend Changes
+- Worker polling and orchestration in `apps/worker/src/modules/worker/worker.runner.ts`
+- Job reservation and state transitions in `apps/worker/src/modules/jobs/jobs.repository.ts`
+- Ordered action execution in `apps/worker/src/modules/worker/worker.service.ts`
+- Processor implementations in `apps/worker/src/modules/processors/*`
+
+### Frontend Changes
+- Overview metrics and latest jobs in the dashboard
+- Jobs page and job inspector consume the resulting job data
+
+### How it works
+The worker uses `FOR UPDATE SKIP LOCKED` to claim one queued job at a time, marks it `processing`, runs `transform`, `enrich`, and `filter` actions in `order_index` order, and stores either `result_payload` or `last_error`.
+
+### Demo Usage
+Send a webhook, then show the Jobs page changing from `queued` to `processing` to `processed`/`completed` while the worker logs and status history update.
+
+## Feature: Retry Mechanism and Dead-Letter Handling
+
+### Description
+Delivery retries are tracked explicitly, failed final deliveries remain visible as dead-letter jobs, and failed jobs can be retried manually from the API and dashboard.
+
+### Backend Changes
+- Delivery attempt persistence in `apps/worker/src/modules/delivery/delivery.repository.ts`
+- Delivery orchestration and retry scheduling in `apps/worker/src/modules/delivery/delivery.service.ts`
+- Manual retry endpoint `POST /api/v1/jobs/:jobId/retry`
+- Dead-letter endpoint `GET /api/v1/jobs/dead-letter`
+
+### Frontend Changes
+- Dead Letters page in `apps/dashboard/src/components/DeadLetter/DeadLetterQueue.tsx`
+- Retry actions in Dead Letter Queue and Job Details drawer
+
+### How it works
+Each subscriber delivery creates a `delivery_attempts` row. Retryable failures move to `failed_retryable` with `next_retry_at`; permanent failures become `failed_final`. Jobs with permanent delivery failure remain in `failed_delivery` and can be manually retried through the existing worker flow.
+
+### Demo Usage
+Use a failing subscriber URL to produce a `failed_delivery` job, show it on the Dead Letters page, then click `Retry` and demonstrate the job being re-armed and reprocessed.
+
+## Feature: Job Lifecycle Tracking
+
+### Description
+Every significant job state transition is recorded so the system can explain how a job moved through the queue, processing, retries, and delivery outcomes.
+
+### Backend Changes
+- `job_status_history` table and repository queries in `apps/api/src/modules/jobs/jobs.repository.ts`
+- Worker status-history inserts in `apps/worker/src/modules/jobs/jobs.repository.ts`
+- Initial `queued` history creation in `apps/api/src/modules/webhooks/webhooks.repository.ts`
+
+### Frontend Changes
+- Job Details drawer in `apps/dashboard/src/components/Jobs/JobDetails.tsx`
+- Timeline UI inside the job inspector using `statusHistory` and `deliveryAttempts`
+
+### How it works
+The API writes the first `queued` transition, the worker records processing and completion/failure transitions, and manual retry flows append additional entries. The dashboard merges these records into a vertical lifecycle timeline.
+
+### Demo Usage
+Open a completed or failed job in the Job Details drawer and walk through the timeline from `queued` to the final outcome, including retry events.
+
+## Feature: Logs System
+
+### Description
+Structured runtime logs are persisted in PostgreSQL, exposed through a dedicated API, and displayed in a dashboard Logs page with filters.
+
+### Backend Changes
+- `logs` table in `infra/postgres/migrations/009_create_logs.sql`
+- `GET /api/v1/logs`
+- Logs repository/controller/routes in `apps/api/src/modules/logs/*`
+- API and worker structured loggers persist to `logs` in `apps/api/src/shared/logger.ts` and `apps/worker/src/shared/logger.ts`
+
+### Frontend Changes
+- Logs page in `apps/dashboard/src/components/Logs/LogsPage.tsx`
+- Logs data loading and API filter wiring in `apps/dashboard/src/hooks/useDashboard.ts`
+
+### How it works
+The API and worker still log JSON to stdout, but now also insert log rows into PostgreSQL with `level`, `source`, `message`, and optional job/pipeline/correlation references. The dashboard queries `/api/v1/logs` with filter parameters instead of reconstructing logs from job history.
+
+### Demo Usage
+Open `#/logs`, filter by `source=worker` or a `jobId`, then trigger a webhook and show new log entries appearing for ingestion, processing, and delivery.
+
+## Feature: Worker Health Monitoring
+
+### Description
+The worker exposes a lightweight heartbeat and uptime signal, and the API proxies that information so the dashboard can display worker status.
+
+### Backend Changes
+- Internal worker health state in `apps/worker/src/modules/health/worker-health.ts`
+- Internal worker health HTTP server in `apps/worker/src/modules/health/worker-health.server.ts`
+- API endpoint `GET /api/v1/worker/health` in `apps/api/src/modules/worker/*`
+
+### Frontend Changes
+- Worker health display in the Settings page system-info card
+- Health loading/error handling in `apps/dashboard/src/hooks/useDashboard.ts`
+
+### How it works
+The worker updates an in-memory heartbeat and uptime snapshot while running. A small internal HTTP endpoint returns this snapshot, and the API tries configured worker-health URLs and falls back to `unknown` if the worker is unreachable.
+
+### Demo Usage
+Open Settings while the worker is running to show `Running`, `lastHeartbeat`, and `uptimeSeconds`. Stop the worker and refresh to show the fallback `Unknown` state.
+
+## Feature: Webhook Secret Management
+
+### Description
+Pipelines can manage webhook secrets safely from the dashboard without exposing stored secrets through normal read endpoints.
+
+### Backend Changes
+- Pipeline reads expose `hasWebhookSecret` instead of the raw secret
+- Secret rotation endpoint `POST /api/v1/pipelines/:pipelineId/webhook-secret/rotate`
+- Secret generation/rotation logic in `apps/api/src/modules/pipelines/pipelines.service.ts`
+
+### Frontend Changes
+- Secret status in the pipelines table
+- Secret management modal in `apps/dashboard/src/components/Pipelines/PipelineSecretModal.tsx`
+- Secret rotation/generation flow in `apps/dashboard/src/hooks/useDashboard.ts`
+
+### How it works
+Normal pipeline reads only reveal whether a secret exists. When a user explicitly rotates or generates a secret, the API returns the new raw secret once so the dashboard can show, hide, and copy it immediately.
+
+### Demo Usage
+Open the Pipelines page, click `Manage Secret`, generate or rotate a secret, and explain that the raw value is only revealed on that explicit action.
+
+## Feature: Pipeline Details Drawer
+
+### Description
+Pipeline details are shown in a dedicated inspector drawer so users can inspect pipeline configuration without overcrowding the main pipelines table.
+
+### Backend Changes
+- No new backend endpoint; the feature reuses `GET /api/v1/pipelines/:pipelineId`
+- Operational stats reuse existing jobs APIs filtered by `pipelineId`
+
+### Frontend Changes
+- `apps/dashboard/src/components/Pipelines/PipelineDetails.tsx`
+- Selection and loading logic in `apps/dashboard/src/hooks/useDashboard.ts`
+- Reusable drawer shell in `apps/dashboard/src/components/Layout/Drawer.tsx`
+
+### How it works
+Selecting a pipeline opens a right-side drawer that loads the full pipeline definition, including actions, subscribers, webhook-secret status, and lightweight operational counts such as total jobs and failed jobs.
+
+### Demo Usage
+Click a pipeline row, open the inspector, and show actions, subscriber URLs, secret status, and quick actions such as `Manage Secret` and `View Jobs`.
+
+## Feature: Job Details Drawer with Timeline UI
+
+### Description
+The Jobs page uses an off-canvas inspector for selected jobs, including a vertical timeline that visualizes status transitions and delivery retries.
+
+### Backend Changes
+- No new endpoint; the drawer reuses `GET /api/v1/jobs/:jobId`
+- Timeline data comes from existing `statusHistory` and `deliveryAttempts`
+
+### Frontend Changes
+- Reusable drawer in `apps/dashboard/src/components/Layout/Drawer.tsx`
+- Job inspector in `apps/dashboard/src/components/Jobs/JobDetails.tsx`
+
+### How it works
+The Jobs page table remains stable while the drawer opens over the page. The inspector shows payloads, result payloads, retry actions, delivery attempts, and a color-coded timeline derived from job status history plus delivery attempt outcomes.
+
+### Demo Usage
+Open a job from the Jobs page and show the right-side inspector opening as an off-canvas drawer. Use a failed job to highlight retry and failure timeline entries.
+
+## Feature: Advanced Filtering for Jobs and Logs
+
+### Description
+The dashboard supports stronger filtering and search for operational views without changing backend contracts unnecessarily.
+
+### Backend Changes
+- Jobs page continues to use existing jobs API filters (`pipelineId`, `status`)
+- Logs page uses existing logs API filters (`level`, `source`, `jobId`, `pipelineId`, `search`)
+
+### Frontend Changes
+- Jobs filters in `apps/dashboard/src/components/Jobs/JobsTable.tsx`
+- Logs filters in `apps/dashboard/src/components/Logs/LogsPage.tsx`
+- Filter state and applied values in `apps/dashboard/src/hooks/useDashboard.ts`
+
+### How it works
+Jobs use a combination of backend filtering and client-side refinement for search/date matching. Logs use the real `/logs` API query params directly. Both pages surface active filters clearly and offer `Clear Filters`.
+
+### Demo Usage
+Filter jobs by status or pipeline, then switch to Logs and filter by `source=delivery` plus a pipeline ID to show targeted troubleshooting flows.
+
+## Feature: Toast Notification System
+
+### Description
+The dashboard replaces blocking or inline-only feedback with reusable non-blocking toast notifications.
+
+### Backend Changes
+- No backend changes
+
+### Frontend Changes
+- `apps/dashboard/src/components/Toast/ToastProvider.tsx`
+- `apps/dashboard/src/components/Toast/ToastViewport.tsx`
+- Toast usage in Settings, Pipeline Secret management, Send Webhook, retry flows, and pipeline status toggles
+
+### How it works
+A lightweight toast provider manages short-lived messages rendered in a fixed top-right viewport. Toasts support success, error, and info states, auto-dismiss after a few seconds, and can be manually closed.
+
+### Demo Usage
+Copy an API key or webhook secret, send a webhook, or pause/activate a pipeline and show the corresponding toast without interrupting the workflow.
+
+## Feature: Discord Webhook Delivery Support
+
+### Description
+The worker now formats deliveries specifically for Discord incoming webhooks while keeping the original generic delivery payload for non-Discord subscribers.
+
+### Backend Changes
+- Discord detection and payload formatting in `apps/worker/src/modules/delivery/delivery.service.ts`
+- No schema or endpoint changes
+
+### Frontend Changes
+- No dedicated dashboard UI changes; the feature is visible through delivery outcomes and logs
+
+### How it works
+If a subscriber URL matches a Discord incoming webhook URL, the worker sends `{ content: "<formatted text>" }` instead of the generic `{ jobId, pipelineId, payload }` body. The message content is built from the processed payload fields such as `orderId`, `customerName`, `amount`, and `status`.
+
+### Demo Usage
+Configure a Discord webhook subscriber, send a test event, and show the formatted Discord message plus the successful delivery attempt in the dashboard.
+
+## Feature: SQL Injection Protection and Query Hardening
+
+### Description
+Repository query builders were reviewed and hardened so dynamic SQL fragments are restricted to explicit allowlists rather than informal string assembly.
+
+### Backend Changes
+- Hardened repositories:
+  - `apps/api/src/modules/logs/logs.repository.ts`
+  - `apps/api/src/modules/jobs/jobs.repository.ts`
+  - `apps/api/src/modules/pipelines/pipelines.repository.ts`
+  - `apps/worker/src/modules/jobs/jobs.repository.ts`
+  - `apps/worker/src/modules/delivery/delivery.repository.ts`
+- Added explicit allowlist maps for dynamic filter/update column names
+
+### Frontend Changes
+- No frontend changes
+
+### How it works
+Values were already parameterized with PostgreSQL placeholders. The hardening work addresses the remaining maintenance risk by ensuring dynamic `WHERE` and `SET` fragments can only emit approved column names, preventing future feature changes from accidentally introducing SQL injection through string-built clauses.
+
+### Demo Usage
+This is not a visual demo feature. Mention it briefly as a backend hardening pass that preserved behavior while removing unsafe dynamic SQL patterns.

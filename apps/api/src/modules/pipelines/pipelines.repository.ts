@@ -63,6 +63,22 @@ type CountRow = {
   total: number;
 };
 
+const PIPELINE_LIST_FILTER_SQL = {
+  status: 'p.status',
+} as const;
+
+const PIPELINE_COUNT_FILTER_SQL = {
+  status: 'status',
+} as const;
+
+const PIPELINE_UPDATE_COLUMN_SQL = {
+  name: 'name',
+  description: 'description',
+  status: 'status',
+  webhookPath: 'webhook_path',
+  webhookSecret: 'webhook_secret',
+} as const;
+
 export type PipelineWithRelations = {
   id: string;
   name: string;
@@ -354,7 +370,7 @@ export async function getAllPipelines(
 
   if (filters.status) {
     values.push(filters.status);
-    whereClauses.push(`p.status = $${values.length}`);
+    whereClauses.push(`${PIPELINE_LIST_FILTER_SQL.status} = $${values.length}`);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -399,7 +415,7 @@ export async function getAllPipelines(
 
   if (filters.status) {
     countValues.push(filters.status);
-    countWhereSql = `WHERE status = $${countValues.length}`;
+    countWhereSql = `WHERE ${PIPELINE_COUNT_FILTER_SQL.status} = $${countValues.length}`;
   }
 
   const countQuery = `
@@ -430,27 +446,27 @@ export async function updatePipeline(
 
   if (data.name !== undefined) {
     values.push(data.name);
-    setClauses.push(`name = $${values.length}`);
+    setClauses.push(`${PIPELINE_UPDATE_COLUMN_SQL.name} = $${values.length}`);
   }
 
   if (data.description !== undefined) {
     values.push(data.description);
-    setClauses.push(`description = $${values.length}`);
+    setClauses.push(`${PIPELINE_UPDATE_COLUMN_SQL.description} = $${values.length}`);
   }
 
   if (data.status !== undefined) {
     values.push(data.status);
-    setClauses.push(`status = $${values.length}`);
+    setClauses.push(`${PIPELINE_UPDATE_COLUMN_SQL.status} = $${values.length}`);
   }
 
   if (data.webhookPath !== undefined) {
     values.push(data.webhookPath);
-    setClauses.push(`webhook_path = $${values.length}`);
+    setClauses.push(`${PIPELINE_UPDATE_COLUMN_SQL.webhookPath} = $${values.length}`);
   }
 
   if (data.webhookSecret !== undefined) {
     values.push(data.webhookSecret);
-    setClauses.push(`webhook_secret = $${values.length}`);
+    setClauses.push(`${PIPELINE_UPDATE_COLUMN_SQL.webhookSecret} = $${values.length}`);
   }
 
   // Fallback for internal use in case callers bypass validation.

@@ -26,6 +26,13 @@ type DatabaseJobRow = {
   updated_at: TimestampValue;
 };
 
+const JOB_UPDATE_COLUMN_SQL = {
+  status: 'status',
+  resultPayload: 'result_payload',
+  lastError: 'last_error',
+  completedAt: 'completed_at',
+} as const;
+
 function toIsoString(value: TimestampValue | null): string | null {
   if (value === null) {
     return null;
@@ -177,23 +184,24 @@ export async function updateJobStatus(
   const values: Array<string | Record<string, unknown> | null> = [];
 
   values.push(status);
-  setClauses.push(`status = $${values.length}`);
+  // Restrict dynamic updates to explicitly approved columns only.
+  setClauses.push(`${JOB_UPDATE_COLUMN_SQL.status} = $${values.length}`);
 
   if (extra.resultPayload !== undefined) {
     values.push(extra.resultPayload);
-    setClauses.push(`result_payload = $${values.length}`);
+    setClauses.push(`${JOB_UPDATE_COLUMN_SQL.resultPayload} = $${values.length}`);
   }
 
   if (extra.lastError !== undefined) {
     values.push(extra.lastError);
-    setClauses.push(`last_error = $${values.length}`);
+    setClauses.push(`${JOB_UPDATE_COLUMN_SQL.lastError} = $${values.length}`);
   }
 
   if (extra.completedAt !== undefined) {
     const completedAtValue =
       extra.completedAt instanceof Date ? extra.completedAt.toISOString() : extra.completedAt;
     values.push(completedAtValue);
-    setClauses.push(`completed_at = $${values.length}`);
+    setClauses.push(`${JOB_UPDATE_COLUMN_SQL.completedAt} = $${values.length}`);
   }
 
   setClauses.push('updated_at = now()');

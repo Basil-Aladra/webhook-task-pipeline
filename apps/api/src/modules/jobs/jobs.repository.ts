@@ -72,6 +72,16 @@ type CountRow = {
   total: number;
 };
 
+const JOB_LIST_FILTER_SQL = {
+  pipelineId: 'j.pipeline_id',
+  status: 'j.status',
+} as const;
+
+const JOB_COUNT_FILTER_SQL = {
+  pipelineId: 'pipeline_id',
+  status: 'status',
+} as const;
+
 export type JobListItem = {
   id: string;
   pipeline_id: string;
@@ -251,12 +261,13 @@ export async function getAllJobs(
 
   if (filters.pipelineId) {
     values.push(filters.pipelineId);
-    whereClauses.push(`j.pipeline_id = $${values.length}`);
+    // Keep filterable columns on an allowlist so future UI query options cannot inject SQL.
+    whereClauses.push(`${JOB_LIST_FILTER_SQL.pipelineId} = $${values.length}`);
   }
 
   if (filters.status) {
     values.push(filters.status);
-    whereClauses.push(`j.status = $${values.length}`);
+    whereClauses.push(`${JOB_LIST_FILTER_SQL.status} = $${values.length}`);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -290,12 +301,12 @@ export async function getAllJobs(
 
   if (filters.pipelineId) {
     countValues.push(filters.pipelineId);
-    countWhereClauses.push(`pipeline_id = $${countValues.length}`);
+    countWhereClauses.push(`${JOB_COUNT_FILTER_SQL.pipelineId} = $${countValues.length}`);
   }
 
   if (filters.status) {
     countValues.push(filters.status);
-    countWhereClauses.push(`status = $${countValues.length}`);
+    countWhereClauses.push(`${JOB_COUNT_FILTER_SQL.status} = $${countValues.length}`);
   }
 
   const countWhereSql =

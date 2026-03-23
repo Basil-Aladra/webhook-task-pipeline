@@ -34,6 +34,17 @@ type CountRow = {
   count: string;
 };
 
+const DELIVERY_UPDATE_COLUMN_SQL = {
+  status: 'status',
+  startedAt: 'started_at',
+  finishedAt: 'finished_at',
+  responseStatusCode: 'response_status_code',
+  responseBody: 'response_body',
+  errorMessage: 'error_message',
+  durationMs: 'duration_ms',
+  nextRetryAt: 'next_retry_at',
+} as const;
+
 export type DeliveryAttempt = {
   id: number;
   jobId: string;
@@ -165,42 +176,43 @@ export async function updateDeliveryAttempt(
 
   if (data.status !== undefined) {
     values.push(data.status);
-    setClauses.push(`status = $${values.length}`);
+    // Column names come from a fixed allowlist rather than arbitrary keys.
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.status} = $${values.length}`);
   }
 
   if (data.startedAt !== undefined) {
     values.push(toDbDate(data.startedAt));
-    setClauses.push(`started_at = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.startedAt} = $${values.length}`);
   }
 
   if (data.finishedAt !== undefined) {
     values.push(toDbDate(data.finishedAt));
-    setClauses.push(`finished_at = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.finishedAt} = $${values.length}`);
   }
 
   if (data.responseStatusCode !== undefined) {
     values.push(data.responseStatusCode);
-    setClauses.push(`response_status_code = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.responseStatusCode} = $${values.length}`);
   }
 
   if (data.responseBody !== undefined) {
     values.push(data.responseBody);
-    setClauses.push(`response_body = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.responseBody} = $${values.length}`);
   }
 
   if (data.errorMessage !== undefined) {
     values.push(data.errorMessage);
-    setClauses.push(`error_message = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.errorMessage} = $${values.length}`);
   }
 
   if (data.durationMs !== undefined) {
     values.push(data.durationMs);
-    setClauses.push(`duration_ms = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.durationMs} = $${values.length}`);
   }
 
   if (data.nextRetryAt !== undefined) {
     values.push(toDbDate(data.nextRetryAt));
-    setClauses.push(`next_retry_at = $${values.length}`);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.nextRetryAt} = $${values.length}`);
   }
 
   if (setClauses.length === 0) {
