@@ -7,6 +7,7 @@ import { Drawer } from "./components/Layout/Drawer";
 import { Header } from "./components/Layout/Header";
 import { LogsPage } from "./components/Logs/LogsPage";
 import { CreatePipelineModal } from "./components/Pipelines/CreatePipelineModal";
+import { PipelineSecretModal } from "./components/Pipelines/PipelineSecretModal";
 import { PipelinesTable } from "./components/Pipelines/PipelinesTable";
 import { SettingsPage } from "./components/Settings/SettingsPage";
 import { StatsSection } from "./components/Stats/StatsSection";
@@ -211,6 +212,7 @@ export default function App(): JSX.Element {
               pipelines={dashboard.pipelines}
               createPipelineResult={dashboard.createPipelineResult}
               onOpenCreateModal={dashboard.handleOpenCreatePipelineModal}
+              onManageSecret={dashboard.handleOpenPipelineSecretModal}
             />
           )}
 
@@ -323,6 +325,16 @@ export default function App(): JSX.Element {
         setCreatePipelineSubscriberUrl={dashboard.setCreatePipelineSubscriberUrl}
         onCancel={dashboard.handleCloseCreatePipelineModal}
         onCreate={dashboard.handleCreatePipeline}
+      />
+
+      <PipelineSecretModal
+        open={dashboard.showPipelineSecretModal}
+        pipeline={dashboard.selectedSecretPipeline}
+        rotatingWebhookSecret={dashboard.rotatingWebhookSecret}
+        pipelineSecretError={dashboard.pipelineSecretError}
+        pipelineSecretResult={dashboard.pipelineSecretResult}
+        onClose={dashboard.handleClosePipelineSecretModal}
+        onRotateWebhookSecret={dashboard.handleRotateWebhookSecret}
       />
     </div>
   );

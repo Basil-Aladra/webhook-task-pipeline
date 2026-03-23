@@ -9,6 +9,7 @@ import {
   getAllPipelines as getAllPipelinesService,
   getPipelineById as getPipelineByIdService,
   PipelineNotFoundError,
+  rotatePipelineWebhookSecret as rotatePipelineWebhookSecretService,
   replacePipelineActions as replacePipelineActionsService,
   replacePipelineSubscribers as replacePipelineSubscribersService,
   updatePipeline as updatePipelineService,
@@ -167,6 +168,27 @@ export async function deletePipelineHandler(req: Request, res: Response): Promis
 
     res.status(200).json({
       data: archivedPipeline,
+    });
+  } catch (error) {
+    handlePipelinesError(error, res);
+  }
+}
+
+// POST /pipelines/:pipelineId/webhook-secret/rotate
+export async function rotatePipelineWebhookSecretHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const { pipelineId } = pipelineIdParamSchema.parse(req.params);
+    const result = await rotatePipelineWebhookSecretService(pipelineId);
+
+    res.status(200).json({
+      data: {
+        pipelineId: result.pipelineId,
+        webhookSecret: result.webhookSecret,
+        hasWebhookSecret: true,
+      },
     });
   } catch (error) {
     handlePipelinesError(error, res);

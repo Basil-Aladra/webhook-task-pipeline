@@ -55,6 +55,7 @@ export type PipelineListItem = {
   name: string;
   status: PipelineStatus;
   webhookPath: string;
+  hasWebhookSecret: boolean;
   actionsCount: number;
   subscribersCount: number;
 };
@@ -268,6 +269,15 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [createPipelineActionType, setCreatePipelineActionType] = useState<ActionType>("transform");
   const [createPipelineActionConfigText, setCreatePipelineActionConfigText] = useState<string>("{}");
   const [createPipelineSubscriberUrl, setCreatePipelineSubscriberUrl] = useState<string>("");
+  const [showPipelineSecretModal, setShowPipelineSecretModal] = useState<boolean>(false);
+  const [selectedSecretPipeline, setSelectedSecretPipeline] = useState<PipelineListItem | null>(null);
+  const [rotatingWebhookSecret, setRotatingWebhookSecret] = useState<boolean>(false);
+  const [pipelineSecretError, setPipelineSecretError] = useState<string>("");
+  const [pipelineSecretResult, setPipelineSecretResult] = useState<{
+    type: "success" | "error";
+    message: string;
+    webhookSecret?: string;
+  } | null>(null);
 
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedJob, setSelectedJob] = useState<JobDetails | null>(null);
@@ -531,6 +541,20 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setCreatePipelineError("");
   }, []);
 
+  const handleOpenPipelineSecretModal = useCallback((pipeline: PipelineListItem) => {
+    setSelectedSecretPipeline(pipeline);
+    setPipelineSecretError("");
+    setPipelineSecretResult(null);
+    setShowPipelineSecretModal(true);
+  }, []);
+
+  const handleClosePipelineSecretModal = useCallback(() => {
+    setShowPipelineSecretModal(false);
+    setSelectedSecretPipeline(null);
+    setPipelineSecretError("");
+    setPipelineSecretResult(null);
+  }, []);
+
   const handleCreatePipeline = useCallback(async () => {
     const name = createPipelineName.trim();
     const webhookPath = createPipelineWebhookPath.trim();
@@ -766,6 +790,52 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     [apiKey],
   );
 
+  const handleRotateWebhookSecret = useCallback(async () => {
+    if (!selectedSecretPipeline) {
+      setPipelineSecretError("Select a pipeline first.");
+      return;
+    }
+
+    setRotatingWebhookSecret(true);
+    setPipelineSecretError("");
+    setPipelineSecretResult(null);
+
+    try {
+      const response = await apiRequest<
+        ApiSingleResponse<{ pipelineId: string; webhookSecret: string; hasWebhookSecret: boolean }>
+      >(`/pipelines/${selectedSecretPipeline.id}/webhook-secret/rotate`, {
+        apiKey,
+        method: "POST",
+      });
+
+      const nextPipeline = {
+        ...selectedSecretPipeline,
+        hasWebhookSecret: true,
+      };
+
+      setSelectedSecretPipeline(nextPipeline);
+      setPipelines((current) =>
+        current.map((pipeline) =>
+          pipeline.id === nextPipeline.id ? { ...pipeline, hasWebhookSecret: true } : pipeline,
+        ),
+      );
+      setPipelineSecretResult({
+        type: "success",
+        message: selectedSecretPipeline.hasWebhookSecret
+          ? "Webhook secret rotated. Copy it now because it is shown only once."
+          : "Webhook secret generated. Copy it now because it is shown only once.",
+        webhookSecret: response.data.webhookSecret,
+      });
+      await loadOverview(true);
+    } catch (error) {
+      setPipelineSecretError(
+        error instanceof Error ? error.message : "Failed to update webhook secret.",
+      );
+    } finally {
+      setRotatingWebhookSecret(false);
+    }
+  }, [apiKey, loadOverview, selectedSecretPipeline]);
+
   const handleRetryJob = useCallback(
     async (jobId: string) => {
       setRetryingJobId(jobId);
@@ -834,9 +904,11 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setAppliedJobsStatusFilter("");
     setSelectedJobId("");
     setSelectedPipelineId("");
+    setSelectedSecretPipeline(null);
     setSendResult(null);
     setRetryJobResult(null);
     setCreatePipelineResult(null);
+    setPipelineSecretResult(null);
     setOverviewError("");
     setLogsError("");
   }, []);
@@ -960,6 +1032,14 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleOpenCreatePipelineModal,
     handleCloseCreatePipelineModal,
     handleCreatePipeline,
+    showPipelineSecretModal,
+    selectedSecretPipeline,
+    rotatingWebhookSecret,
+    pipelineSecretError,
+    pipelineSecretResult,
+    handleOpenPipelineSecretModal,
+    handleClosePipelineSecretModal,
+    handleRotateWebhookSecret,
     selectedJobId,
     setSelectedJobId,
     selectedJob,

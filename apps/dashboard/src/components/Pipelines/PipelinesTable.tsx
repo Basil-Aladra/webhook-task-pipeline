@@ -9,6 +9,7 @@ type PipelinesTableProps = {
   pipelines: PipelineListItem[];
   createPipelineResult: CreatePipelineResult;
   onOpenCreateModal: () => void;
+  onManageSecret: (pipeline: PipelineListItem) => void;
 };
 
 function statusClass(status: PipelineListItem["status"]): string {
@@ -21,6 +22,7 @@ export function PipelinesTable({
   pipelines,
   createPipelineResult,
   onOpenCreateModal,
+  onManageSecret,
 }: PipelinesTableProps): JSX.Element {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -54,10 +56,12 @@ export function PipelinesTable({
                 <th className="ui-table-head-cell">Name</th>
                 <th className="ui-table-head-cell">Status</th>
                 <th className="ui-table-head-cell">Webhook Path</th>
+                <th className="ui-table-head-cell">Webhook Secret</th>
                 <th className="ui-table-head-cell">Actions Count</th>
                 <th className="ui-table-head-cell">
                   Subscribers Count
                 </th>
+                <th className="ui-table-head-cell">Security</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -72,8 +76,26 @@ export function PipelinesTable({
                     </span>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">/api/v1/webhooks/{pipeline.webhookPath}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`ui-badge ${
+                        pipeline.hasWebhookSecret ? "ui-badge-success" : "ui-badge-neutral"
+                      }`}
+                    >
+                      {pipeline.hasWebhookSecret ? "Configured" : "Not set"}
+                    </span>
+                  </td>
                   <td className="px-3 py-2">{pipeline.actionsCount ?? 0}</td>
                   <td className="px-3 py-2">{pipeline.subscribersCount ?? 0}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => onManageSecret(pipeline)}
+                      className="ui-btn-secondary"
+                    >
+                      Manage Secret
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

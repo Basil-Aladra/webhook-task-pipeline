@@ -5,6 +5,7 @@ import {
   deletePipelineHandler,
   getAllPipelinesHandler,
   getPipelineByIdHandler,
+  rotatePipelineWebhookSecretHandler,
   replacePipelineActionsHandler,
   replacePipelineSubscribersHandler,
   updatePipelineHandler,
@@ -29,6 +30,9 @@ pipelinesRouter.put('/pipelines/:pipelineId/actions', replacePipelineActionsHand
 
 // Replace all subscribers for a pipeline.
 pipelinesRouter.put('/pipelines/:pipelineId/subscribers', replacePipelineSubscribersHandler);
+
+// Generate or rotate a pipeline webhook secret.
+pipelinesRouter.post('/pipelines/:pipelineId/webhook-secret/rotate', rotatePipelineWebhookSecretHandler);
 
 // Soft-delete (archive) a pipeline.
 pipelinesRouter.delete('/pipelines/:pipelineId', deletePipelineHandler);

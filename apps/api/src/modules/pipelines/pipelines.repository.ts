@@ -18,6 +18,7 @@ type PipelineRow = {
   status: 'active' | 'paused' | 'archived';
   webhook_path: string;
   description: string | null;
+  has_webhook_secret: boolean;
   created_at: TimestampValue;
   updated_at: TimestampValue;
 };
@@ -51,6 +52,7 @@ type PipelineListRow = {
   status: 'active' | 'paused' | 'archived';
   webhook_path: string;
   description: string | null;
+  has_webhook_secret: boolean;
   created_at: TimestampValue;
   updated_at: TimestampValue;
   actions_count: number;
@@ -67,6 +69,7 @@ export type PipelineWithRelations = {
   status: 'active' | 'paused' | 'archived';
   webhookPath: string;
   description: string | null;
+  hasWebhookSecret: boolean;
   createdAt: string;
   updatedAt: string;
   actions: Array<{
@@ -98,6 +101,7 @@ export type PipelineListItem = {
   status: 'active' | 'paused' | 'archived';
   webhookPath: string;
   description: string | null;
+  hasWebhookSecret: boolean;
   actionsCount: number;
   subscribersCount: number;
   createdAt: string;
@@ -124,6 +128,7 @@ function mapPipelineRow(row: PipelineRow): Omit<PipelineWithRelations, 'actions'
     status: row.status,
     webhookPath: row.webhook_path,
     description: row.description,
+    hasWebhookSecret: row.has_webhook_secret,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
   };
@@ -165,6 +170,7 @@ function mapPipelineListRow(row: PipelineListRow): PipelineListItem {
     status: row.status,
     webhookPath: row.webhook_path,
     description: row.description,
+    hasWebhookSecret: row.has_webhook_secret,
     actionsCount: row.actions_count,
     subscribersCount: row.subscribers_count,
     createdAt: toIsoString(row.created_at),
@@ -183,7 +189,15 @@ export async function createPipeline(
   const query = `
     INSERT INTO pipelines (name, status, webhook_path, description, webhook_secret)
     VALUES ($1, $2, $3, $4, $5)
-    RETURNING id, name, status, webhook_path, description, created_at, updated_at
+    RETURNING
+      id,
+      name,
+      status,
+      webhook_path,
+      description,
+      (webhook_secret IS NOT NULL) AS has_webhook_secret,
+      created_at,
+      updated_at
   `;
 
   const values = [data.name, data.status, data.webhookPath, data.description ?? null, data.webhookSecret ?? null];
@@ -267,7 +281,15 @@ export async function getPipelineById(
   db: Queryable = pool,
 ): Promise<PipelineWithRelations | null> {
   const pipelineQuery = `
-    SELECT id, name, status, webhook_path, description, created_at, updated_at
+    SELECT
+      id,
+      name,
+      status,
+      webhook_path,
+      description,
+      (webhook_secret IS NOT NULL) AS has_webhook_secret,
+      created_at,
+      updated_at
     FROM pipelines
     WHERE id = $1
   `;
@@ -350,6 +372,7 @@ export async function getAllPipelines(
       p.status,
       p.webhook_path,
       p.description,
+      (p.webhook_secret IS NOT NULL) AS has_webhook_secret,
       p.created_at,
       p.updated_at,
       COALESCE(pa.actions_count, 0)::int AS actions_count,
@@ -453,6 +476,23 @@ export async function updatePipeline(
   }
 
   return getPipelineById(pipelineId, db);
+}
+
+// Updates a pipeline webhook secret and returns whether a pipeline was updated.
+export async function setPipelineWebhookSecret(
+  pipelineId: string,
+  webhookSecret: string,
+  db: Queryable = pool,
+): Promise<boolean> {
+  const updateQuery = `
+    UPDATE pipelines
+    SET webhook_secret = $1, updated_at = now()
+    WHERE id = $2
+    RETURNING id
+  `;
+
+  const result = await db.query<{ id: string }>(updateQuery, [webhookSecret, pipelineId]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 // Replaces all actions for a pipeline.

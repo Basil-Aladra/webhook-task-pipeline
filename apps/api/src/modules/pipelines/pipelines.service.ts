@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { pool } from '../../db/pool';
 import {
   archivePipeline,
@@ -8,6 +9,7 @@ import {
   getPipelineById as getPipelineByIdRecord,
   PaginatedPipelines,
   PipelineWithRelations,
+  setPipelineWebhookSecret,
   replacePipelineActions as replacePipelineActionsRecord,
   replacePipelineSubscribers as replacePipelineSubscribersRecord,
   updatePipeline as updatePipelineRecord,
@@ -35,6 +37,11 @@ export class PipelineNotFoundError extends Error {
     this.name = 'PipelineNotFoundError';
   }
 }
+
+export type RotatedWebhookSecret = {
+  pipelineId: string;
+  webhookSecret: string;
+};
 
 type PostgresErrorLike = {
   code?: string;
@@ -209,4 +216,21 @@ export async function deletePipeline(pipelineId: string): Promise<PipelineWithRe
   }
 
   return archived;
+}
+
+// Generates a new webhook secret for a pipeline and returns it once.
+export async function rotatePipelineWebhookSecret(
+  pipelineId: string,
+): Promise<RotatedWebhookSecret> {
+  const webhookSecret = `wsec_${crypto.randomBytes(24).toString('hex')}`;
+  const updated = await setPipelineWebhookSecret(pipelineId, webhookSecret);
+
+  if (!updated) {
+    throw new PipelineNotFoundError();
+  }
+
+  return {
+    pipelineId,
+    webhookSecret,
+  };
 }
