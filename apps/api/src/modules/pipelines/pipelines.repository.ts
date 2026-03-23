@@ -175,15 +175,18 @@ function mapPipelineListRow(row: PipelineListRow): PipelineListItem {
 // Inserts a new pipeline row.
 export async function createPipeline(
   client: PoolClient,
-  data: Pick<CreatePipelineRequest, 'name' | 'status' | 'webhookPath' | 'description'>,
+  data: Pick<
+    CreatePipelineRequest,
+    'name' | 'status' | 'webhookPath' | 'description' | 'webhookSecret'
+  >,
 ): Promise<PipelineRow> {
   const query = `
-    INSERT INTO pipelines (name, status, webhook_path, description)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO pipelines (name, status, webhook_path, description, webhook_secret)
+    VALUES ($1, $2, $3, $4, $5)
     RETURNING id, name, status, webhook_path, description, created_at, updated_at
   `;
 
-  const values = [data.name, data.status, data.webhookPath, data.description ?? null];
+  const values = [data.name, data.status, data.webhookPath, data.description ?? null, data.webhookSecret ?? null];
   const result = await client.query<PipelineRow>(query, values);
   return result.rows[0];
 }
@@ -420,6 +423,11 @@ export async function updatePipeline(
   if (data.webhookPath !== undefined) {
     values.push(data.webhookPath);
     setClauses.push(`webhook_path = $${values.length}`);
+  }
+
+  if (data.webhookSecret !== undefined) {
+    values.push(data.webhookSecret);
+    setClauses.push(`webhook_secret = $${values.length}`);
   }
 
   // Fallback for internal use in case callers bypass validation.

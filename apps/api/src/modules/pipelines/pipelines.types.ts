@@ -32,6 +32,8 @@ export const createPipelineRequestSchema = z.object({
     .max(120)
     .regex(/^[a-z0-9-]+$/, 'webhookPath must contain only lowercase letters, numbers, and hyphens'),
   description: z.string().max(500).optional(),
+  // Optional secret used to verify incoming webhook requests.
+  webhookSecret: z.string().max(255).nullable().optional(),
   status: pipelineStatusSchema.default('paused'),
   actions: z.array(createPipelineActionSchema).max(50).optional(),
   subscribers: z.array(createPipelineSubscriberSchema).max(20).optional(),
@@ -51,6 +53,8 @@ export const updatePipelineRequestSchema = z
       )
       .optional(),
     description: z.string().max(500).nullable().optional(),
+    // Optional secret; set to `null` to clear.
+    webhookSecret: z.string().max(255).nullable().optional(),
     status: pipelineStatusSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {

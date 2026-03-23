@@ -62,6 +62,7 @@ export async function createPipeline(data: CreatePipelineRequest): Promise<Pipel
       status: data.status,
       webhookPath: data.webhookPath,
       description: data.description,
+      webhookSecret: data.webhookSecret,
     });
 
     if (data.actions && data.actions.length > 0) {

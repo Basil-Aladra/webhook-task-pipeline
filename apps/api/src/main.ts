@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import express from 'express';
 import { logger } from './shared/logger';
 
+import { apiRateLimiter, webhookRateLimiter } from './middleware/rateLimiter';
+
 import jobsRouter from './modules/jobs/jobs.routes';
 import metricsRouter from './modules/metrics/metrics.routes';
 import pipelinesRouter from './modules/pipelines/pipelines.routes';
@@ -15,7 +17,23 @@ const app = express();
 const apiPort = Number(process.env.API_PORT) || 3000;
 
 app.use(cors());
-app.use(express.json());
+// Capture the raw request body bytes so we can compute/verify HMAC signatures.
+// This buffer is available on `req.rawBody` for middleware (see `verifyWebhookSignature`).
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+    },
+  }),
+);
+
+// Apply rate limiters BEFORE mounting routes.
+// 1) Webhook endpoints are stricter: 60 requests/min/IP.
+app.use('/api/v1/webhooks', webhookRateLimiter);
+
+// 2) All other API endpoints: 200 requests/min/IP.
+// `apiRateLimiter` skips webhook routes so limits don't stack.
+app.use('/api/v1', apiRateLimiter);
 
 // Mount versioned API routes.
 app.use('/api/v1', pipelinesRouter);
