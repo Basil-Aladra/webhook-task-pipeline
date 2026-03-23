@@ -7,6 +7,7 @@ import { Drawer } from "./components/Layout/Drawer";
 import { Header } from "./components/Layout/Header";
 import { LogsPage } from "./components/Logs/LogsPage";
 import { CreatePipelineModal } from "./components/Pipelines/CreatePipelineModal";
+import { PipelineDetails } from "./components/Pipelines/PipelineDetails";
 import { PipelineSecretModal } from "./components/Pipelines/PipelineSecretModal";
 import { PipelinesTable } from "./components/Pipelines/PipelinesTable";
 import { SettingsPage } from "./components/Settings/SettingsPage";
@@ -208,12 +209,41 @@ export default function App(): JSX.Element {
           )}
 
           {currentPage === "pipelines" && (
-            <PipelinesTable
-              pipelines={dashboard.pipelines}
-              createPipelineResult={dashboard.createPipelineResult}
-              onOpenCreateModal={dashboard.handleOpenCreatePipelineModal}
-              onManageSecret={dashboard.handleOpenPipelineSecretModal}
-            />
+            <>
+              <PipelinesTable
+                pipelines={dashboard.pipelines}
+                createPipelineResult={dashboard.createPipelineResult}
+                selectedPipelineId={dashboard.selectedPipelineDetailsId}
+                onOpenCreateModal={dashboard.handleOpenCreatePipelineModal}
+                onSelectPipeline={dashboard.handleOpenPipelineDetails}
+                onManageSecret={dashboard.handleOpenPipelineSecretModal}
+              />
+
+              <Drawer
+                isOpen={Boolean(dashboard.selectedPipelineDetailsId)}
+                onClose={dashboard.handleClosePipelineDetails}
+              >
+                <PipelineDetails
+                  selectedPipelineId={dashboard.selectedPipelineDetailsId}
+                  selectedPipeline={dashboard.selectedPipelineDetails}
+                  loadingPipelineDetails={dashboard.loadingPipelineDetails}
+                  pipelineDetailsError={dashboard.pipelineDetailsError}
+                  operationalStats={dashboard.selectedPipelineOperationalStats}
+                  onManageSecret={dashboard.handleOpenPipelineSecretModal}
+                  onSendTestWebhook={(pipeline) => {
+                    dashboard.setSelectedPipelineId(pipeline.id);
+                    dashboard.handleClosePipelineDetails();
+                    navigateTo("overview");
+                  }}
+                  onViewJobs={(pipeline) => {
+                    void dashboard.handleViewJobsForPipeline(pipeline);
+                    dashboard.handleClosePipelineDetails();
+                    navigateTo("jobs");
+                  }}
+                  onClearSelection={dashboard.handleClosePipelineDetails}
+                />
+              </Drawer>
+            </>
           )}
 
           {currentPage === "jobs" && (
@@ -223,6 +253,8 @@ export default function App(): JSX.Element {
                 jobsStatusFilter={dashboard.jobsStatusFilter}
                 setJobsStatusFilter={dashboard.setJobsStatusFilter}
                 onApplyFilter={dashboard.handleApplyJobsFilter}
+                jobsPipelineFilter={dashboard.jobsPipelineFilter}
+                onClearPipelineFilter={dashboard.clearJobsPipelineFilter}
                 selectedJobId={dashboard.selectedJobId}
                 onSelectJob={dashboard.setSelectedJobId}
               />

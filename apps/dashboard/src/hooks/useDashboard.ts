@@ -60,6 +60,38 @@ export type PipelineListItem = {
   subscribersCount: number;
 };
 
+export type PipelineDetails = {
+  id: string;
+  name: string;
+  status: PipelineStatus;
+  webhookPath: string;
+  description: string | null;
+  hasWebhookSecret: boolean;
+  createdAt: string;
+  updatedAt: string;
+  actions: Array<{
+    id: string;
+    pipelineId: string;
+    orderIndex: number;
+    actionType: ActionType;
+    config: Record<string, unknown>;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  subscribers: Array<{
+    id: string;
+    pipelineId: string;
+    targetUrl: string;
+    enabled: boolean;
+    timeoutMs: number;
+    maxRetries: number;
+    retryBackoffMs: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
 export type JobListItem = {
   id: string;
   pipeline_id: string;
@@ -221,6 +253,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [deadLetterJobs, setDeadLetterJobs] = useState<DeadLetterJob[]>([]);
   const [jobsStatusFilter, setJobsStatusFilter] = useState<string>("");
   const [appliedJobsStatusFilter, setAppliedJobsStatusFilter] = useState<string>("");
+  const [jobsPipelineFilter, setJobsPipelineFilter] = useState<{ id: string; name: string } | null>(null);
   const [loadingOverview, setLoadingOverview] = useState<boolean>(true);
   const [overviewError, setOverviewError] = useState<string>("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -251,6 +284,19 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     message: string;
     webhookSecret?: string;
   } | null>(null);
+  const [selectedPipelineDetailsId, setSelectedPipelineDetailsId] = useState<string>("");
+  const [selectedPipelineDetails, setSelectedPipelineDetails] = useState<PipelineDetails | null>(null);
+  const [loadingPipelineDetails, setLoadingPipelineDetails] = useState<boolean>(false);
+  const [pipelineDetailsError, setPipelineDetailsError] = useState<string>("");
+  const [selectedPipelineOperationalStats, setSelectedPipelineOperationalStats] = useState<{
+    jobsCount: number;
+    failedJobsCount: number;
+    latestActivityAt: string | null;
+  }>({
+    jobsCount: 0,
+    failedJobsCount: 0,
+    latestActivityAt: null,
+  });
 
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedJob, setSelectedJob] = useState<JobDetails | null>(null);
@@ -286,8 +332,17 @@ export function useDashboard(activePage: DashboardPage = "overview") {
 
       try {
         const jobsListPath = appliedJobsStatusFilter
-          ? `/jobs?status=${encodeURIComponent(appliedJobsStatusFilter)}&page=1&limit=100`
-          : "/jobs?page=1&limit=100";
+          ? `/jobs?${new URLSearchParams({
+              ...(jobsPipelineFilter ? { pipelineId: jobsPipelineFilter.id } : {}),
+              status: appliedJobsStatusFilter,
+              page: "1",
+              limit: "100",
+            }).toString()}`
+          : `/jobs?${new URLSearchParams({
+              ...(jobsPipelineFilter ? { pipelineId: jobsPipelineFilter.id } : {}),
+              page: "1",
+              limit: "100",
+            }).toString()}`;
 
         const [
           pipelinesSummary,
@@ -384,7 +439,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
         }
       }
     },
-    [apiKey, appliedJobsStatusFilter],
+    [apiKey, appliedJobsStatusFilter, jobsPipelineFilter],
   );
 
   const handleSendWebhook = useCallback(async () => {
@@ -452,9 +507,20 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setOverviewError("");
 
     try {
-      const jobsPath = jobsStatusFilter
-        ? `/jobs?status=${encodeURIComponent(jobsStatusFilter)}&page=1&limit=100`
-        : "/jobs?page=1&limit=100";
+      const queryParams = new URLSearchParams({
+        page: "1",
+        limit: "100",
+      });
+
+      if (jobsPipelineFilter) {
+        queryParams.set("pipelineId", jobsPipelineFilter.id);
+      }
+
+      if (jobsStatusFilter) {
+        queryParams.set("status", jobsStatusFilter);
+      }
+
+      const jobsPath = `/jobs?${queryParams.toString()}`;
 
       const jobsResponse = await apiRequest<ApiListResponse<JobListItem>>(jobsPath, { apiKey });
       setJobs(Array.isArray(jobsResponse.data) ? jobsResponse.data : []);
@@ -465,7 +531,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
           : "Failed to load dashboard data. Check API availability and CORS settings.",
       );
     }
-  }, [apiKey, jobsStatusFilter]);
+  }, [apiKey, jobsPipelineFilter, jobsStatusFilter]);
 
   const resetCreatePipelineForm = useCallback(() => {
     setCreatePipelineName("");
@@ -625,6 +691,77 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     [apiKey],
   );
 
+  const loadPipelineDetails = useCallback(
+    async (pipelineId: string, silent = false) => {
+      if (!pipelineId) {
+        setSelectedPipelineDetails(null);
+        setSelectedPipelineOperationalStats({
+          jobsCount: 0,
+          failedJobsCount: 0,
+          latestActivityAt: null,
+        });
+        return;
+      }
+
+      if (!silent) {
+        setLoadingPipelineDetails(true);
+      }
+      setPipelineDetailsError("");
+
+      try {
+        const [pipelineResponse, jobsSummary, latestJobsResponse, failedProcessingSummary, failedDeliverySummary] =
+          await Promise.all([
+            apiRequest<ApiSingleResponse<PipelineDetails>>(`/pipelines/${pipelineId}`, {
+              apiKey,
+            }),
+            apiRequest<ApiListResponse<JobListItem>>(`/jobs?pipelineId=${pipelineId}&page=1&limit=1`, {
+              apiKey,
+            }),
+            apiRequest<ApiListResponse<JobListItem>>(`/jobs?pipelineId=${pipelineId}&page=1&limit=5`, {
+              apiKey,
+            }),
+            apiRequest<ApiListResponse<JobListItem>>(
+              `/jobs?pipelineId=${pipelineId}&status=failed_processing&page=1&limit=1`,
+              { apiKey },
+            ),
+            apiRequest<ApiListResponse<JobListItem>>(
+              `/jobs?pipelineId=${pipelineId}&status=failed_delivery&page=1&limit=1`,
+              { apiKey },
+            ),
+          ]);
+
+        setSelectedPipelineDetails(pipelineResponse.data || null);
+
+        const latestActivityAt =
+          Array.isArray(latestJobsResponse.data) && latestJobsResponse.data.length > 0
+            ? latestJobsResponse.data[0].created_at
+            : null;
+
+        setSelectedPipelineOperationalStats({
+          jobsCount: jobsSummary.meta?.total || 0,
+          failedJobsCount:
+            (failedProcessingSummary.meta?.total || 0) + (failedDeliverySummary.meta?.total || 0),
+          latestActivityAt,
+        });
+      } catch (error) {
+        setSelectedPipelineDetails(null);
+        setSelectedPipelineOperationalStats({
+          jobsCount: 0,
+          failedJobsCount: 0,
+          latestActivityAt: null,
+        });
+        setPipelineDetailsError(
+          error instanceof Error ? error.message : "Failed to load pipeline details.",
+        );
+      } finally {
+        if (!silent) {
+          setLoadingPipelineDetails(false);
+        }
+      }
+    },
+    [apiKey],
+  );
+
   const loadLogs = useCallback(
     async (silent = false) => {
       if (!silent) {
@@ -716,6 +853,14 @@ export function useDashboard(activePage: DashboardPage = "overview") {
           pipeline.id === nextPipeline.id ? { ...pipeline, hasWebhookSecret: true } : pipeline,
         ),
       );
+      setSelectedPipelineDetails((current) =>
+        current && current.id === nextPipeline.id
+          ? {
+              ...current,
+              hasWebhookSecret: true,
+            }
+          : current,
+      );
       setPipelineSecretResult({
         type: "success",
         message: selectedSecretPipeline.hasWebhookSecret
@@ -732,6 +877,58 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       setRotatingWebhookSecret(false);
     }
   }, [apiKey, loadOverview, selectedSecretPipeline]);
+
+  const handleOpenPipelineDetails = useCallback((pipeline: PipelineListItem) => {
+    setSelectedPipelineDetailsId(pipeline.id);
+  }, []);
+
+  const handleClosePipelineDetails = useCallback(() => {
+    setSelectedPipelineDetailsId("");
+    setSelectedPipelineDetails(null);
+    setPipelineDetailsError("");
+  }, []);
+
+  const handleViewJobsForPipeline = useCallback(async (pipeline: PipelineListItem) => {
+    setJobsPipelineFilter({
+      id: pipeline.id,
+      name: pipeline.name,
+    });
+    setAppliedJobsStatusFilter("");
+    setJobsStatusFilter("");
+    setSelectedJobId("");
+
+    try {
+      const response = await apiRequest<ApiListResponse<JobListItem>>(
+        `/jobs?pipelineId=${pipeline.id}&page=1&limit=100`,
+        { apiKey },
+      );
+      setJobs(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : "Failed to load pipeline jobs.");
+    }
+  }, [apiKey]);
+
+  const clearJobsPipelineFilter = useCallback(async () => {
+    setJobsPipelineFilter(null);
+
+    try {
+      const queryParams = new URLSearchParams({
+        page: "1",
+        limit: "100",
+      });
+
+      if (jobsStatusFilter) {
+        queryParams.set("status", jobsStatusFilter);
+      }
+
+      const response = await apiRequest<ApiListResponse<JobListItem>>(`/jobs?${queryParams.toString()}`, {
+        apiKey,
+      });
+      setJobs(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : "Failed to load jobs.");
+    }
+  }, [apiKey, jobsStatusFilter]);
 
   const handleRetryJob = useCallback(
     async (jobId: string) => {
@@ -849,6 +1046,21 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   }, [selectedJobId, loadJobDetails]);
 
   useEffect(() => {
+    if (!selectedPipelineDetailsId) {
+      setSelectedPipelineDetails(null);
+      setPipelineDetailsError("");
+      setSelectedPipelineOperationalStats({
+        jobsCount: 0,
+        failedJobsCount: 0,
+        latestActivityAt: null,
+      });
+      return;
+    }
+
+    void loadPipelineDetails(selectedPipelineDetailsId);
+  }, [selectedPipelineDetailsId, loadPipelineDetails]);
+
+  useEffect(() => {
     if (!autoRefreshEnabled) {
       return;
     }
@@ -869,10 +1081,14 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       if (selectedJobId && activePage === "jobs") {
         void loadJobDetails(selectedJobId, true);
       }
+
+      if (selectedPipelineDetailsId && activePage === "pipelines") {
+        void loadPipelineDetails(selectedPipelineDetailsId, true);
+      }
     }, refreshIntervalMs);
 
     return () => clearInterval(intervalId);
-  }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, loadWorkerHealth, refreshIntervalMs, selectedJobId]);
+  }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, loadPipelineDetails, loadWorkerHealth, refreshIntervalMs, selectedJobId, selectedPipelineDetailsId]);
 
   return {
     apiKey,
@@ -894,6 +1110,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     deadLetterJobs,
     jobsStatusFilter,
     setJobsStatusFilter,
+    jobsPipelineFilter,
     loadingOverview,
     overviewError,
     lastUpdatedAt,
@@ -929,6 +1146,13 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleOpenCreatePipelineModal,
     handleCloseCreatePipelineModal,
     handleCreatePipeline,
+    selectedPipelineDetailsId,
+    selectedPipelineDetails,
+    loadingPipelineDetails,
+    pipelineDetailsError,
+    selectedPipelineOperationalStats,
+    handleOpenPipelineDetails,
+    handleClosePipelineDetails,
     showPipelineSecretModal,
     selectedSecretPipeline,
     rotatingWebhookSecret,
@@ -937,6 +1161,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleOpenPipelineSecretModal,
     handleClosePipelineSecretModal,
     handleRotateWebhookSecret,
+    handleViewJobsForPipeline,
+    clearJobsPipelineFilter,
     selectedJobId,
     setSelectedJobId,
     selectedJob,

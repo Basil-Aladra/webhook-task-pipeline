@@ -5,6 +5,8 @@ type JobsTableProps = {
   jobsStatusFilter: string;
   setJobsStatusFilter: (value: string) => void;
   onApplyFilter: () => void;
+  jobsPipelineFilter?: { id: string; name: string } | null;
+  onClearPipelineFilter?: () => void;
   selectedJobId: string;
   onSelectJob: (jobId: string) => void;
 };
@@ -34,6 +36,8 @@ export function JobsTable({
   jobsStatusFilter,
   setJobsStatusFilter,
   onApplyFilter,
+  jobsPipelineFilter,
+  onClearPipelineFilter,
   selectedJobId,
   onSelectJob,
 }: JobsTableProps): JSX.Element {
@@ -46,6 +50,20 @@ export function JobsTable({
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          {jobsPipelineFilter && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Pipeline</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-800">{jobsPipelineFilter.name}</span>
+                {onClearPipelineFilter && (
+                  <button type="button" onClick={onClearPipelineFilter} className="ui-btn-secondary">
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
             <select

@@ -8,7 +8,9 @@ type CreatePipelineResult = {
 type PipelinesTableProps = {
   pipelines: PipelineListItem[];
   createPipelineResult: CreatePipelineResult;
+  selectedPipelineId: string;
   onOpenCreateModal: () => void;
+  onSelectPipeline: (pipeline: PipelineListItem) => void;
   onManageSecret: (pipeline: PipelineListItem) => void;
 };
 
@@ -21,7 +23,9 @@ function statusClass(status: PipelineListItem["status"]): string {
 export function PipelinesTable({
   pipelines,
   createPipelineResult,
+  selectedPipelineId,
   onOpenCreateModal,
+  onSelectPipeline,
   onManageSecret,
 }: PipelinesTableProps): JSX.Element {
   return (
@@ -61,12 +65,18 @@ export function PipelinesTable({
                 <th className="ui-table-head-cell">
                   Subscribers Count
                 </th>
-                <th className="ui-table-head-cell">Security</th>
+                <th className="ui-table-head-cell">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pipelines.map((pipeline) => (
-                <tr key={pipeline.id} className="ui-table-row">
+                <tr
+                  key={pipeline.id}
+                  className={`ui-table-row cursor-pointer ${
+                    selectedPipelineId === pipeline.id ? "bg-slate-100 ring-1 ring-inset ring-slate-200" : ""
+                  }`}
+                  onClick={() => onSelectPipeline(pipeline)}
+                >
                   <td className="px-3 py-2">{pipeline.name}</td>
                   <td className="px-3 py-2">
                     <span
@@ -88,13 +98,28 @@ export function PipelinesTable({
                   <td className="px-3 py-2">{pipeline.actionsCount ?? 0}</td>
                   <td className="px-3 py-2">{pipeline.subscribersCount ?? 0}</td>
                   <td className="px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectPipeline(pipeline);
+                        }}
+                        className="ui-btn-secondary"
+                      >
+                        View
+                      </button>
                     <button
                       type="button"
-                      onClick={() => onManageSecret(pipeline)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onManageSecret(pipeline);
+                      }}
                       className="ui-btn-secondary"
                     >
                       Manage Secret
                     </button>
+                    </div>
                   </td>
                 </tr>
               ))}
