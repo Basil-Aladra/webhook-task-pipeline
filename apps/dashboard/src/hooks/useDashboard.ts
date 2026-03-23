@@ -254,6 +254,10 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [jobsStatusFilter, setJobsStatusFilter] = useState<string>("");
   const [appliedJobsStatusFilter, setAppliedJobsStatusFilter] = useState<string>("");
   const [jobsPipelineFilter, setJobsPipelineFilter] = useState<{ id: string; name: string } | null>(null);
+  const [jobsSearchText, setJobsSearchText] = useState<string>("");
+  const [appliedJobsSearchText, setAppliedJobsSearchText] = useState<string>("");
+  const [jobsCreatedDate, setJobsCreatedDate] = useState<string>("");
+  const [appliedJobsCreatedDate, setAppliedJobsCreatedDate] = useState<string>("");
   const [loadingOverview, setLoadingOverview] = useState<boolean>(true);
   const [overviewError, setOverviewError] = useState<string>("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -313,6 +317,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [logsLevelFilter, setLogsLevelFilter] = useState<"" | LogLevel>("");
   const [logsSourceFilter, setLogsSourceFilter] = useState<"" | LogSource>("");
   const [logsSearchText, setLogsSearchText] = useState<string>("");
+  const [logsPipelineFilter, setLogsPipelineFilter] = useState<string>("");
 
   const activePipelines = useMemo(
     () => pipelines.filter((pipeline) => pipeline.status === "active"),
@@ -322,6 +327,39 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const filteredLogs = useMemo(() => {
     return logs;
   }, [logs]);
+
+  const filteredJobs = useMemo(() => {
+    const normalizedSearch = appliedJobsSearchText.trim().toLowerCase();
+
+    return jobs.filter((job) => {
+      if (normalizedSearch) {
+        const matchesJobId = job.id.toLowerCase().includes(normalizedSearch);
+        const matchesPipelineId = job.pipeline_id.toLowerCase().includes(normalizedSearch);
+
+        if (!matchesJobId && !matchesPipelineId) {
+          return false;
+        }
+      }
+
+      if (appliedJobsCreatedDate) {
+        const jobDate = new Date(job.created_at);
+
+        if (Number.isNaN(jobDate.getTime())) {
+          return false;
+        }
+
+        const yyyy = jobDate.getFullYear();
+        const mm = String(jobDate.getMonth() + 1).padStart(2, "0");
+        const dd = String(jobDate.getDate()).padStart(2, "0");
+
+        if (`${yyyy}-${mm}-${dd}` !== appliedJobsCreatedDate) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [appliedJobsCreatedDate, appliedJobsSearchText, jobs]);
 
   const loadOverview = useCallback(
     async (silent = false) => {
@@ -504,6 +542,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
 
   const handleApplyJobsFilter = useCallback(async () => {
     setAppliedJobsStatusFilter(jobsStatusFilter);
+    setAppliedJobsSearchText(jobsSearchText.trim());
+    setAppliedJobsCreatedDate(jobsCreatedDate);
     setOverviewError("");
 
     try {
@@ -531,7 +571,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
           : "Failed to load dashboard data. Check API availability and CORS settings.",
       );
     }
-  }, [apiKey, jobsPipelineFilter, jobsStatusFilter]);
+  }, [apiKey, jobsCreatedDate, jobsPipelineFilter, jobsSearchText, jobsStatusFilter]);
 
   const resetCreatePipelineForm = useCallback(() => {
     setCreatePipelineName("");
@@ -781,6 +821,11 @@ export function useDashboard(activePage: DashboardPage = "overview") {
           searchParams.set("source", logsSourceFilter);
         }
 
+        const trimmedPipelineId = logsPipelineFilter.trim();
+        if (trimmedPipelineId) {
+          searchParams.set("pipelineId", trimmedPipelineId);
+        }
+
         const trimmedSearch = logsSearchText.trim();
         if (trimmedSearch) {
           searchParams.set("search", trimmedSearch);
@@ -799,7 +844,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
         }
       }
     },
-    [apiKey, logsLevelFilter, logsSearchText, logsSourceFilter],
+    [apiKey, logsLevelFilter, logsPipelineFilter, logsSearchText, logsSourceFilter],
   );
 
   const loadWorkerHealth = useCallback(
@@ -930,6 +975,26 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     }
   }, [apiKey, jobsStatusFilter]);
 
+  const clearJobsFilters = useCallback(async () => {
+    setJobsStatusFilter("");
+    setAppliedJobsStatusFilter("");
+    setJobsSearchText("");
+    setAppliedJobsSearchText("");
+    setJobsCreatedDate("");
+    setAppliedJobsCreatedDate("");
+    setJobsPipelineFilter(null);
+    setOverviewError("");
+
+    try {
+      const response = await apiRequest<ApiListResponse<JobListItem>>("/jobs?page=1&limit=100", {
+        apiKey,
+      });
+      setJobs(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : "Failed to load jobs.");
+    }
+  }, [apiKey]);
+
   const handleRetryJob = useCallback(
     async (jobId: string) => {
       setRetryingJobId(jobId);
@@ -996,6 +1061,12 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setRetryDelayMs(DEFAULT_RETRY_DELAY_MS);
     setJobsStatusFilter("");
     setAppliedJobsStatusFilter("");
+    setJobsSearchText("");
+    setAppliedJobsSearchText("");
+    setJobsCreatedDate("");
+    setAppliedJobsCreatedDate("");
+    setJobsPipelineFilter(null);
+    setLogsPipelineFilter("");
     setSelectedJobId("");
     setSelectedPipelineId("");
     setSelectedSecretPipeline(null);
@@ -1107,10 +1178,18 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     clearLocalSettings,
     pipelines,
     jobs,
+    filteredJobs,
     deadLetterJobs,
     jobsStatusFilter,
     setJobsStatusFilter,
     jobsPipelineFilter,
+    jobsSearchText,
+    setJobsSearchText,
+    jobsCreatedDate,
+    setJobsCreatedDate,
+    appliedJobsStatusFilter,
+    appliedJobsSearchText,
+    appliedJobsCreatedDate,
     loadingOverview,
     overviewError,
     lastUpdatedAt,
@@ -1125,6 +1204,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     activePipelines,
     handleSendWebhook,
     handleApplyJobsFilter,
+    clearJobsFilters,
     showCreatePipelineModal,
     creatingPipeline,
     createPipelineError,
@@ -1182,6 +1262,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setLogsSourceFilter,
     logsSearchText,
     setLogsSearchText,
+    logsPipelineFilter,
+    setLogsPipelineFilter,
     filteredLogs,
     refreshOverview: () => loadOverview(false),
     refreshLogs: () => loadLogs(false),

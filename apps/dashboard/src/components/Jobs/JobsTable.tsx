@@ -4,7 +4,15 @@ type JobsTableProps = {
   jobs: JobListItem[];
   jobsStatusFilter: string;
   setJobsStatusFilter: (value: string) => void;
+  jobsSearchText: string;
+  setJobsSearchText: (value: string) => void;
+  jobsCreatedDate: string;
+  setJobsCreatedDate: (value: string) => void;
+  appliedJobsStatusFilter?: string;
+  appliedJobsSearchText?: string;
+  appliedJobsCreatedDate?: string;
   onApplyFilter: () => void;
+  onClearFilters?: () => void;
   jobsPipelineFilter?: { id: string; name: string } | null;
   onClearPipelineFilter?: () => void;
   selectedJobId: string;
@@ -35,12 +43,27 @@ export function JobsTable({
   jobs,
   jobsStatusFilter,
   setJobsStatusFilter,
+  jobsSearchText,
+  setJobsSearchText,
+  jobsCreatedDate,
+  setJobsCreatedDate,
+  appliedJobsStatusFilter,
+  appliedJobsSearchText,
+  appliedJobsCreatedDate,
   onApplyFilter,
+  onClearFilters,
   jobsPipelineFilter,
   onClearPipelineFilter,
   selectedJobId,
   onSelectJob,
 }: JobsTableProps): JSX.Element {
+  const activeFilters = [
+    jobsPipelineFilter ? `Pipeline: ${jobsPipelineFilter.name}` : "",
+    appliedJobsStatusFilter ? `Status: ${appliedJobsStatusFilter}` : "",
+    appliedJobsSearchText ? `Search: ${appliedJobsSearchText}` : "",
+    appliedJobsCreatedDate ? `Date: ${appliedJobsCreatedDate}` : "",
+  ].filter(Boolean);
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
@@ -48,8 +71,9 @@ export function JobsTable({
         <p className="ui-subtitle">Track processing status and inspect selected job details below.</p>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Filters</p>
+        <div className="flex flex-col gap-3">
           {jobsPipelineFilter && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Pipeline</p>
@@ -64,32 +88,74 @@ export function JobsTable({
             </div>
           )}
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
-            <select
-              value={jobsStatusFilter}
-              onChange={(event) => setJobsStatusFilter(event.target.value)}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 sm:w-56"
-            >
-              <option value="">All Statuses</option>
-              <option value="queued">queued</option>
-              <option value="processing">processing</option>
-              <option value="processed">processed</option>
-              <option value="completed">completed</option>
-              <option value="failed_processing">failed_processing</option>
-              <option value="failed_delivery">failed_delivery</option>
-            </select>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Search</label>
+              <input
+                type="text"
+                value={jobsSearchText}
+                onChange={(event) => setJobsSearchText(event.target.value)}
+                placeholder="jobId or pipelineId"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
+              <select
+                value={jobsStatusFilter}
+                onChange={(event) => setJobsStatusFilter(event.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+              >
+                <option value="">All Statuses</option>
+                <option value="queued">queued</option>
+                <option value="processing">processing</option>
+                <option value="processed">processed</option>
+                <option value="completed">completed</option>
+                <option value="failed_processing">failed_processing</option>
+                <option value="failed_delivery">failed_delivery</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Created Date</label>
+              <input
+                type="date"
+                value={jobsCreatedDate}
+                onChange={(event) => setJobsCreatedDate(event.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={onApplyFilter}
+                className="ui-btn-primary"
+              >
+                Filter
+              </button>
+              {onClearFilters && (
+                <button type="button" onClick={onClearFilters} className="ui-btn-secondary">
+                  Clear Filters
+                </button>
+              )}
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={onApplyFilter}
-            className="ui-btn-primary"
-          >
-            Filter
-          </button>
         </div>
+      </div>
 
+      {activeFilters.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {activeFilters.map((filterLabel) => (
+            <span key={filterLabel} className="ui-badge ui-badge-neutral">
+              {filterLabel}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-slate-500">Showing {jobs.length} jobs</p>
       </div>
 

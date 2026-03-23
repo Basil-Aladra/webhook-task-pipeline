@@ -10,6 +10,8 @@ type LogsPageProps = {
   setLogsSourceFilter: (value: "" | LogSource) => void;
   logsSearchText: string;
   setLogsSearchText: (value: string) => void;
+  logsPipelineFilter: string;
+  setLogsPipelineFilter: (value: string) => void;
   onRefresh: () => void;
   onClearFilters: () => void;
 };
@@ -51,9 +53,18 @@ export function LogsPage({
   setLogsSourceFilter,
   logsSearchText,
   setLogsSearchText,
+  logsPipelineFilter,
+  setLogsPipelineFilter,
   onRefresh,
   onClearFilters,
 }: LogsPageProps): JSX.Element {
+  const activeFilters = [
+    logsLevelFilter ? `Level: ${logsLevelFilter}` : "",
+    logsSourceFilter ? `Source: ${logsSourceFilter}` : "",
+    logsPipelineFilter.trim() ? `Pipeline: ${logsPipelineFilter.trim()}` : "",
+    logsSearchText.trim() ? `Search: ${logsSearchText.trim()}` : "",
+  ].filter(Boolean);
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -75,7 +86,7 @@ export function LogsPage({
 
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Filters</p>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Level</label>
             <select
@@ -115,8 +126,29 @@ export function LogsPage({
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
             />
           </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Pipeline ID</label>
+            <input
+              type="text"
+              value={logsPipelineFilter}
+              onChange={(event) => setLogsPipelineFilter(event.target.value)}
+              placeholder="optional pipeline UUID"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
+            />
+          </div>
         </div>
       </div>
+
+      {activeFilters.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {activeFilters.map((filterLabel) => (
+            <span key={filterLabel} className="ui-badge ui-badge-neutral">
+              {filterLabel}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-slate-500">Showing {logs.length} log entries</p>

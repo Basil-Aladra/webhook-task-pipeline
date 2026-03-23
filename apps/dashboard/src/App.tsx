@@ -249,10 +249,18 @@ export default function App(): JSX.Element {
           {currentPage === "jobs" && (
             <>
               <JobsTable
-                jobs={dashboard.jobs}
+                jobs={dashboard.filteredJobs}
                 jobsStatusFilter={dashboard.jobsStatusFilter}
                 setJobsStatusFilter={dashboard.setJobsStatusFilter}
+                jobsSearchText={dashboard.jobsSearchText}
+                setJobsSearchText={dashboard.setJobsSearchText}
+                jobsCreatedDate={dashboard.jobsCreatedDate}
+                setJobsCreatedDate={dashboard.setJobsCreatedDate}
+                appliedJobsStatusFilter={dashboard.appliedJobsStatusFilter}
+                appliedJobsSearchText={dashboard.appliedJobsSearchText}
+                appliedJobsCreatedDate={dashboard.appliedJobsCreatedDate}
                 onApplyFilter={dashboard.handleApplyJobsFilter}
+                onClearFilters={dashboard.clearJobsFilters}
                 jobsPipelineFilter={dashboard.jobsPipelineFilter}
                 onClearPipelineFilter={dashboard.clearJobsPipelineFilter}
                 selectedJobId={dashboard.selectedJobId}
@@ -298,11 +306,14 @@ export default function App(): JSX.Element {
               setLogsSourceFilter={dashboard.setLogsSourceFilter}
               logsSearchText={dashboard.logsSearchText}
               setLogsSearchText={dashboard.setLogsSearchText}
+              logsPipelineFilter={dashboard.logsPipelineFilter}
+              setLogsPipelineFilter={dashboard.setLogsPipelineFilter}
               onRefresh={dashboard.refreshLogs}
               onClearFilters={() => {
                 dashboard.setLogsLevelFilter("");
                 dashboard.setLogsSourceFilter("");
                 dashboard.setLogsSearchText("");
+                dashboard.setLogsPipelineFilter("");
               }}
             />
           )}
