@@ -2,6 +2,9 @@ import { pool } from '../../db/pool';
 import { ListLogsQuery } from './logs.types';
 
 type TimestampValue = string | Date;
+type Queryable = {
+  query: <T>(text: string, values?: Array<string | number>) => Promise<{ rows: T[] }>;
+};
 
 type LogRow = {
   id: number;
@@ -53,7 +56,10 @@ function mapLogRow(row: LogRow): LogListItem {
   };
 }
 
-export async function getLogs(filters: ListLogsQuery): Promise<LogListItem[]> {
+export async function getLogs(
+  filters: ListLogsQuery,
+  db: Queryable = pool,
+): Promise<LogListItem[]> {
   const whereClauses: string[] = [];
   const values: Array<string | number> = [];
 
@@ -111,6 +117,6 @@ export async function getLogs(filters: ListLogsQuery): Promise<LogListItem[]> {
     LIMIT ${limitParam}
   `;
 
-  const result = await pool.query<LogRow>(query, values);
+  const result = await db.query<LogRow>(query, values);
   return result.rows.map(mapLogRow);
 }

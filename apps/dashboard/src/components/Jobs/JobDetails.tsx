@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+import { useToast } from "../Toast/ToastProvider";
 import { JobDetails as JobDetailsType } from "../../hooks/useDashboard";
 
 type JobDetailsProps = {
@@ -7,7 +9,14 @@ type JobDetailsProps = {
   jobDetailsError: string;
   retryingJobId?: string;
   retryJobResult?: { type: "success" | "error"; message: string } | null;
+  replayingJobId?: string;
+  replayJobResult?: { type: "success" | "error"; message: string } | null;
+  deliveryActionAttemptId?: number | null;
+  deliveryActionResult?: { type: "success" | "error"; message: string } | null;
   onRetryJob?: (jobId: string) => void | Promise<void>;
+  onReplayJob?: (jobId: string) => void | Promise<void>;
+  onRetryDeliveryAttempt?: (jobId: string, attemptId: number) => void | Promise<void>;
+  onCancelDeliveryRetry?: (jobId: string, attemptId: number) => void | Promise<void>;
   onClearSelection?: () => void;
 };
 
@@ -18,6 +27,14 @@ type TimelineItem = {
   message?: string;
   tone: "queued" | "processing" | "completed" | "failed" | "retry";
 };
+
+type ConfirmActionState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmClassName: string;
+  action: () => Promise<void>;
+} | null;
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -42,6 +59,50 @@ function statusClass(status: JobDetailsType["status"]): string {
   if (status === "completed") return "bg-emerald-100 text-emerald-700";
   if (status === "failed_processing") return "bg-red-100 text-red-700";
   return "bg-orange-100 text-orange-700";
+}
+
+function deliveryStatusClass(status: string): string {
+  if (status === "scheduled") return "ui-badge-neutral";
+  if (status === "in_progress") return "ui-badge-info";
+  if (status === "succeeded") return "ui-badge-success";
+  if (status === "failed_retryable") return "bg-orange-100 text-orange-700";
+  if (status === "failed_final") return "ui-badge-danger";
+  return "ui-badge-neutral";
+}
+
+function getDeliveryOutcome(attempt: JobDetailsType["deliveryAttempts"][number]): {
+  label: string;
+  className: string;
+} {
+  if (attempt.status === "succeeded") {
+    return { label: "Delivered", className: "ui-badge-success" };
+  }
+
+  if (attempt.status === "failed_retryable") {
+    return { label: "Will Retry", className: "bg-orange-100 text-orange-700" };
+  }
+
+  if (attempt.status === "failed_final") {
+    return { label: "Final Failure", className: "ui-badge-danger" };
+  }
+
+  if (attempt.status === "in_progress") {
+    return { label: "In Progress", className: "ui-badge-info" };
+  }
+
+  return { label: "Pending", className: "ui-badge-neutral" };
+}
+
+function formatDuration(durationMs: number | null | undefined): string {
+  if (typeof durationMs !== "number" || Number.isNaN(durationMs)) {
+    return "-";
+  }
+
+  if (durationMs < 1000) {
+    return `${durationMs} ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(2)} s`;
 }
 
 function timelineToneClass(tone: TimelineItem["tone"]): string {
@@ -115,14 +176,90 @@ export function JobDetails({
   jobDetailsError,
   retryingJobId,
   retryJobResult,
+  replayingJobId,
+  replayJobResult,
+  deliveryActionAttemptId,
+  deliveryActionResult,
   onRetryJob,
+  onReplayJob,
+  onRetryDeliveryAttempt,
+  onCancelDeliveryRetry,
   onClearSelection,
 }: JobDetailsProps): JSX.Element {
+  const { showToast } = useToast();
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
+  const [isConfirmingAction, setIsConfirmingAction] = useState(false);
   const selectedStatus = selectedJob?.status;
   const canRetry =
     selectedJob?.status === "failed_delivery" || selectedJob?.status === "failed_processing";
+  const canReplay =
+    selectedJob?.status === "processed" ||
+    selectedJob?.status === "completed" ||
+    selectedJob?.status === "failed_processing" ||
+    selectedJob?.status === "failed_delivery";
   const isRetryingSelectedJob = Boolean(selectedJob && retryingJobId === selectedJob.id);
+  const isReplayingSelectedJob = Boolean(selectedJob && replayingJobId === selectedJob.id);
   const timelineItems = selectedJob ? buildTimelineItems(selectedJob) : [];
+  const deliveryAttempts = selectedJob?.deliveryAttempts || [];
+  const successfulAttemptsCount = deliveryAttempts.filter((attempt) => attempt.status === "succeeded").length;
+  const retryPendingCount = deliveryAttempts.filter((attempt) => attempt.status === "failed_retryable").length;
+  const finalFailureCount = deliveryAttempts.filter((attempt) => attempt.status === "failed_final").length;
+  const isManualActionPending = useMemo(
+    () =>
+      isConfirmingAction ||
+      isRetryingSelectedJob ||
+      isReplayingSelectedJob ||
+      deliveryActionAttemptId !== null,
+    [deliveryActionAttemptId, isConfirmingAction, isReplayingSelectedJob, isRetryingSelectedJob],
+  );
+
+  useEffect(() => {
+    if (!replayJobResult) {
+      return;
+    }
+
+    showToast({
+      type: replayJobResult.type,
+      message: replayJobResult.message,
+    });
+  }, [replayJobResult, showToast]);
+
+  useEffect(() => {
+    if (!retryJobResult) {
+      return;
+    }
+
+    showToast({
+      type: retryJobResult.type,
+      message: retryJobResult.message,
+    });
+  }, [retryJobResult, showToast]);
+
+  useEffect(() => {
+    if (!deliveryActionResult) {
+      return;
+    }
+
+    showToast({
+      type: deliveryActionResult.type,
+      message: deliveryActionResult.message,
+    });
+  }, [deliveryActionResult, showToast]);
+
+  async function handleConfirmAction(): Promise<void> {
+    if (!confirmAction) {
+      return;
+    }
+
+    setIsConfirmingAction(true);
+
+    try {
+      await confirmAction.action();
+      setConfirmAction(null);
+    } finally {
+      setIsConfirmingAction(false);
+    }
+  }
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
@@ -134,11 +271,32 @@ export function JobDetails({
             <p className="ui-subtitle">Inspect payload, status timeline, and delivery attempts.</p>
           </div>
           <div className="flex items-center gap-2">
+            {selectedJob && canReplay && onReplayJob && (
+              <button
+                type="button"
+                onClick={() =>
+                  setConfirmAction({
+                    title: "Replay Job",
+                    description:
+                      "This will queue a new copy of the job for full reprocessing. The original job will remain unchanged for audit purposes.",
+                    confirmLabel: "Replay Job",
+                    confirmClassName: "ui-btn-secondary",
+                    action: async () => {
+                      await onReplayJob(selectedJob.id);
+                    },
+                  })
+                }
+                disabled={isManualActionPending}
+                className="ui-btn-secondary"
+              >
+                {isReplayingSelectedJob ? "Replaying..." : "Replay Job"}
+              </button>
+            )}
             {selectedJob && canRetry && onRetryJob && (
               <button
                 type="button"
                 onClick={() => onRetryJob(selectedJob.id)}
-                disabled={isRetryingSelectedJob}
+                disabled={isManualActionPending}
                 className="ui-btn-primary"
               >
                 {isRetryingSelectedJob ? "Retrying..." : "Retry Job"}
@@ -168,9 +326,21 @@ export function JobDetails({
       </div>
 
       <div className="space-y-6 p-4">
+        {replayJobResult && selectedJobId && (
+          <div className={replayJobResult.type === "success" ? "ui-feedback-success" : "ui-feedback-error"}>
+            {replayJobResult.message}
+          </div>
+        )}
+
         {retryJobResult && selectedJobId && (
           <div className={retryJobResult.type === "success" ? "ui-feedback-success" : "ui-feedback-error"}>
             {retryJobResult.message}
+          </div>
+        )}
+
+        {deliveryActionResult && selectedJobId && (
+          <div className={deliveryActionResult.type === "success" ? "ui-feedback-success" : "ui-feedback-error"}>
+            {deliveryActionResult.message}
           </div>
         )}
 
@@ -288,35 +458,174 @@ export function JobDetails({
             </div>
 
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">Delivery Attempts</h3>
-              {selectedJob.deliveryAttempts?.length ? (
-                <div className="overflow-x-auto rounded-lg border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="ui-table-head-cell">Attempt</th>
-                        <th className="ui-table-head-cell">Subscriber URL</th>
-                        <th className="ui-table-head-cell">Status</th>
-                        <th className="ui-table-head-cell">HTTP</th>
-                        <th className="ui-table-head-cell">Started</th>
-                        <th className="ui-table-head-cell">Finished</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedJob.deliveryAttempts.map((attempt) => (
-                        <tr key={attempt.id} className="ui-table-row">
-                          <td className="px-3 py-2">{attempt.attempt_no}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{attempt.target_url}</td>
-                          <td className="px-3 py-2">
-                            <span className="ui-badge ui-badge-neutral">{attempt.status}</span>
-                          </td>
-                          <td className="px-3 py-2">{attempt.response_status_code ?? "-"}</td>
-                          <td className="px-3 py-2">{formatDate(attempt.started_at)}</td>
-                          <td className="px-3 py-2">{formatDate(attempt.finished_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Delivery Diagnostics</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Inspect subscriber targets, retry state, response details, and failure reasons.
+                  </p>
+                </div>
+                <span className="ui-badge ui-badge-neutral">{deliveryAttempts.length} attempt(s)</span>
+              </div>
+
+              {deliveryAttempts.length ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Delivered</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-900">{successfulAttemptsCount}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Retry Pending</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-900">{retryPendingCount}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Final Failures</p>
+                      <p className="mt-2 text-lg font-semibold text-slate-900">{finalFailureCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {deliveryAttempts.map((attempt) => {
+                      const outcome = getDeliveryOutcome(attempt);
+                      const isApplyingAttemptAction = deliveryActionAttemptId === attempt.id;
+                      const canRetryDeliveryAttempt =
+                        attempt.status === "failed_retryable" || attempt.status === "failed_final";
+                      const canCancelRetry = attempt.status === "failed_retryable";
+
+                      return (
+                        <article
+                          key={attempt.id}
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-sm font-semibold text-slate-900">
+                                  Attempt #{attempt.attempt_no}
+                                </h4>
+                                <span className={`ui-badge ${deliveryStatusClass(attempt.status)}`}>
+                                  {attempt.status}
+                                </span>
+                                <span className={`ui-badge ${outcome.className}`}>{outcome.label}</span>
+                              </div>
+                              <p className="mt-2 break-all font-mono text-xs text-slate-600">
+                                {attempt.target_url}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-right">
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">HTTP</p>
+                                <p className="mt-1 text-sm font-semibold text-slate-900">
+                                  {attempt.response_status_code ?? "-"}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2">
+                                {canRetryDeliveryAttempt && onRetryDeliveryAttempt && selectedJob && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        title: "Retry Delivery",
+                                        description:
+                                          "This will immediately re-queue this failed delivery attempt for the worker. Use it when you want to force another outbound delivery now.",
+                                        confirmLabel: "Retry Delivery",
+                                        confirmClassName: "ui-btn-secondary",
+                                        action: async () => {
+                                          await onRetryDeliveryAttempt(selectedJob.id, attempt.id);
+                                        },
+                                      })
+                                    }
+                                    disabled={isManualActionPending}
+                                    className="ui-btn-secondary"
+                                  >
+                                    {isApplyingAttemptAction ? "Applying..." : "Retry Delivery"}
+                                  </button>
+                                )}
+                                {canCancelRetry && onCancelDeliveryRetry && selectedJob && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setConfirmAction({
+                                        title: "Cancel Retry",
+                                        description:
+                                          "This will stop any further retry for this attempt. If the job is waiting on this retry, it may be marked as failed delivery.",
+                                        confirmLabel: "Cancel Retry",
+                                        confirmClassName: "ui-btn-danger",
+                                        action: async () => {
+                                          await onCancelDeliveryRetry(selectedJob.id, attempt.id);
+                                        },
+                                      })
+                                    }
+                                    disabled={isManualActionPending}
+                                    className="ui-btn-danger"
+                                  >
+                                    {isApplyingAttemptAction ? "Applying..." : "Cancel Retry"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Started</p>
+                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.started_at)}</p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Finished</p>
+                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.finished_at)}</p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Scheduled</p>
+                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.scheduled_at ?? null)}</p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Duration</p>
+                              <p className="mt-1 text-sm text-slate-700">{formatDuration(attempt.duration_ms)}</p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Next Retry</p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                {attempt.next_retry_at ? formatDate(attempt.next_retry_at) : "-"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Failure Reason
+                              </p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                {attempt.error_message?.trim() || "No failure recorded."}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Response Body
+                              </p>
+                              <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+                                {attempt.response_body?.trim() || "No response body recorded."}
+                              </pre>
+                            </div>
+
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Request Payload
+                              </p>
+                              <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+                                {formatJson(attempt.request_payload)}
+                              </pre>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <p className="ui-feedback-empty">No delivery attempts available.</p>
@@ -325,6 +634,37 @@ export function JobDetails({
           </div>
         )}
       </div>
+
+      {confirmAction && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Confirm Action</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">{confirmAction.title}</h3>
+              <p className="mt-3 text-sm text-slate-600">{confirmAction.description}</p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                disabled={isConfirmingAction}
+                className="ui-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmAction()}
+                disabled={isConfirmingAction}
+                className={confirmAction.confirmClassName}
+              >
+                {isConfirmingAction ? "Submitting..." : confirmAction.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

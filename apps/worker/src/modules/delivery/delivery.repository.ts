@@ -38,6 +38,7 @@ const DELIVERY_UPDATE_COLUMN_SQL = {
   status: 'status',
   startedAt: 'started_at',
   finishedAt: 'finished_at',
+  requestPayload: 'request_payload',
   responseStatusCode: 'response_status_code',
   responseBody: 'response_body',
   errorMessage: 'error_message',
@@ -73,6 +74,7 @@ export type UpdateDeliveryAttemptInput = {
   status?: DeliveryAttemptStatus;
   startedAt?: string | Date | null;
   finishedAt?: string | Date | null;
+  requestPayload?: Record<string, unknown> | null;
   responseStatusCode?: number | null;
   responseBody?: string | null;
   errorMessage?: string | null;
@@ -172,7 +174,7 @@ export async function updateDeliveryAttempt(
   db: Queryable = pool,
 ): Promise<DeliveryAttempt> {
   const setClauses: string[] = [];
-  const values: Array<string | number | null> = [];
+  const values: Array<string | number | Record<string, unknown> | null> = [];
 
   if (data.status !== undefined) {
     values.push(data.status);
@@ -188,6 +190,11 @@ export async function updateDeliveryAttempt(
   if (data.finishedAt !== undefined) {
     values.push(toDbDate(data.finishedAt));
     setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.finishedAt} = $${values.length}`);
+  }
+
+  if (data.requestPayload !== undefined) {
+    values.push(data.requestPayload);
+    setClauses.push(`${DELIVERY_UPDATE_COLUMN_SQL.requestPayload} = $${values.length}`);
   }
 
   if (data.responseStatusCode !== undefined) {

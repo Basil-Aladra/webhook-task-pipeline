@@ -94,12 +94,14 @@ export async function deliverToSubscriber(
     subscriberId: subscriber.id,
     attemptNo,
   });
+  const requestBody = buildSubscriberRequestBody(job, subscriber, payload);
 
   const startedAt = new Date();
 
   await updateDeliveryAttempt(attempt.id, {
     status: 'in_progress',
     startedAt,
+    requestPayload: requestBody,
   });
 
   logger.info('Delivery attempt started', {
@@ -111,8 +113,6 @@ export async function deliverToSubscriber(
   });
 
   try {
-    const requestBody = buildSubscriberRequestBody(job, subscriber, payload);
-
     const response = await sendPost(
       subscriber.targetUrl,
       requestBody,
@@ -178,11 +178,13 @@ export async function deliverToSubscriber(
   } catch (error) {
     const retryable = attemptNo < subscriber.maxRetries;
     const message = error instanceof Error ? error.message : 'Delivery request failed';
+    const durationMs = Date.now() - startedAt.getTime();
 
     await updateDeliveryAttempt(attempt.id, {
       status: retryable ? 'failed_retryable' : 'failed_final',
       finishedAt: new Date(),
       errorMessage: message,
+      durationMs,
       nextRetryAt: retryable ? computeNextRetryAt(subscriber.retryBackoffMs) : null,
     });
 
@@ -194,6 +196,7 @@ export async function deliverToSubscriber(
       attemptNo,
       retryable,
       error: message,
+      durationMs,
     });
 
     return {

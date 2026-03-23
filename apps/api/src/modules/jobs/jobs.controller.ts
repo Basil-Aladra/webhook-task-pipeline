@@ -3,13 +3,18 @@ import { logger } from '../../shared/logger';
 import { ZodError } from 'zod';
 
 import {
+  cancelDeliveryRetry,
+  DeliveryAttemptActionResult,
   getAllJobs,
   getDeadLetterJobs,
   getJobById,
   JobsRepositoryError,
+  replayJob,
+  ReplayJobResult,
+  retryDeliveryAttempt,
   retryJob,
 } from './jobs.repository';
-import { jobIdParamSchema, listJobsQuerySchema } from './jobs.types';
+import { deliveryAttemptParamSchema, jobIdParamSchema, listJobsQuerySchema } from './jobs.types';
 
 function handleJobsError(error: unknown, res: Response): void {
   if (error instanceof ZodError) {
@@ -105,11 +110,18 @@ export async function getJobByIdHandler(req: Request, res: Response): Promise<vo
 
 // POST /jobs/:jobId/retry
 export async function retryJobHandler(req: Request, res: Response): Promise<void> {
+  const requestId = req.header('x-request-id') ?? undefined;
+
   try {
     const { jobId } = jobIdParamSchema.parse(req.params);
     const result = await retryJob(jobId);
 
     if (!result) {
+      logger.warn('Manual job retry failed: job not found', {
+        requestId,
+        jobId,
+      });
+
       res.status(404).json({
         error: {
           code: 'JOB_NOT_FOUND',
@@ -119,10 +131,163 @@ export async function retryJobHandler(req: Request, res: Response): Promise<void
       return;
     }
 
+    logger.info('Manual job retry scheduled', {
+      requestId,
+      jobId,
+      status: result.status,
+    });
+
     res.status(200).json({
       data: result,
     });
   } catch (error) {
+    if (error instanceof JobsRepositoryError) {
+      logger.warn('Manual job retry rejected', {
+        requestId,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
+    handleJobsError(error, res);
+  }
+}
+
+// POST /jobs/:jobId/replay
+export async function replayJobHandler(req: Request, res: Response): Promise<void> {
+  const requestId = req.header('x-request-id') ?? undefined;
+
+  try {
+    const { jobId } = jobIdParamSchema.parse(req.params);
+    const result = await replayJob(jobId);
+
+    if (!result) {
+      logger.warn('Manual job replay failed: job not found', {
+        requestId,
+        jobId,
+      });
+
+      res.status(404).json({
+        error: {
+          code: 'JOB_NOT_FOUND',
+          message: 'Job not found.',
+        },
+      });
+      return;
+    }
+
+    logger.info('Manual job replay queued', {
+      requestId,
+      jobId: result.newJobId,
+      originalJobId: result.originalJobId,
+    });
+
+    res.status(200).json({
+      data: result satisfies ReplayJobResult,
+    });
+  } catch (error) {
+    if (error instanceof JobsRepositoryError) {
+      logger.warn('Manual job replay rejected', {
+        requestId,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
+    handleJobsError(error, res);
+  }
+}
+
+// POST /jobs/:jobId/delivery-attempts/:attemptId/retry
+export async function retryDeliveryAttemptHandler(req: Request, res: Response): Promise<void> {
+  const requestId = req.header('x-request-id') ?? undefined;
+
+  try {
+    const { jobId, attemptId } = deliveryAttemptParamSchema.parse(req.params);
+    const result = await retryDeliveryAttempt(jobId, attemptId);
+
+    if (!result) {
+      logger.warn('Manual delivery retry failed: attempt not found', {
+        requestId,
+        jobId,
+        attemptId,
+      });
+
+      res.status(404).json({
+        error: {
+          code: 'DELIVERY_ATTEMPT_NOT_FOUND',
+          message: 'Delivery attempt not found.',
+        },
+      });
+      return;
+    }
+
+    logger.info('Manual delivery retry scheduled', {
+      requestId,
+      jobId,
+      attemptId,
+      status: result.status,
+    });
+
+    res.status(200).json({
+      data: result satisfies DeliveryAttemptActionResult,
+    });
+  } catch (error) {
+    if (error instanceof JobsRepositoryError) {
+      logger.warn('Manual delivery retry rejected', {
+        requestId,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
+    handleJobsError(error, res);
+  }
+}
+
+// POST /jobs/:jobId/delivery-attempts/:attemptId/cancel-retry
+export async function cancelDeliveryRetryHandler(req: Request, res: Response): Promise<void> {
+  const requestId = req.header('x-request-id') ?? undefined;
+
+  try {
+    const { jobId, attemptId } = deliveryAttemptParamSchema.parse(req.params);
+    const result = await cancelDeliveryRetry(jobId, attemptId);
+
+    if (!result) {
+      logger.warn('Manual delivery retry cancel failed: attempt not found', {
+        requestId,
+        jobId,
+        attemptId,
+      });
+
+      res.status(404).json({
+        error: {
+          code: 'DELIVERY_ATTEMPT_NOT_FOUND',
+          message: 'Delivery attempt not found.',
+        },
+      });
+      return;
+    }
+
+    logger.info('Manual delivery retry cancelled', {
+      requestId,
+      jobId,
+      attemptId,
+      status: result.status,
+    });
+
+    res.status(200).json({
+      data: result satisfies DeliveryAttemptActionResult,
+    });
+  } catch (error) {
+    if (error instanceof JobsRepositoryError) {
+      logger.warn('Manual delivery retry cancel rejected', {
+        requestId,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
     handleJobsError(error, res);
   }
 }

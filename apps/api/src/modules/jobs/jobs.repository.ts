@@ -191,6 +191,20 @@ export type RetryJobResult = {
   message: string;
 };
 
+export type ReplayJobResult = {
+  originalJobId: string;
+  newJobId: string;
+  status: JobStatus;
+  message: string;
+};
+
+export type DeliveryAttemptActionResult = {
+  jobId: string;
+  attemptId: number;
+  status: JobStatus;
+  message: string;
+};
+
 function toIsoString(value: TimestampValue | null): string | null {
   if (value === null) {
     return null;
@@ -644,6 +658,330 @@ export async function retryJob(jobId: string): Promise<RetryJobResult | null> {
       'Only failed jobs can be retried.',
       { status: currentJob.status },
     );
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Queues a brand-new job copied from an existing job so the original audit trail stays intact.
+export async function replayJob(jobId: string): Promise<ReplayJobResult | null> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const originalJobResult = await client.query<{
+      id: string;
+      pipeline_id: string;
+      payload: Record<string, unknown>;
+      status: JobStatus;
+    }>(
+      `
+        SELECT id, pipeline_id, payload, status
+        FROM jobs
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [jobId],
+    );
+
+    if (originalJobResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const originalJob = originalJobResult.rows[0];
+
+    if (originalJob.status === 'queued' || originalJob.status === 'processing') {
+      throw new JobsRepositoryError(
+        409,
+        'JOB_NOT_REPLAYABLE',
+        'Queued or processing jobs cannot be replayed.',
+        { status: originalJob.status },
+      );
+    }
+
+    const insertedJobResult = await client.query<{ id: string; status: JobStatus }>(
+      `
+        INSERT INTO jobs (
+          pipeline_id,
+          status,
+          payload,
+          idempotency_key,
+          available_at,
+          received_at
+        )
+        VALUES ($1, 'queued', $2, NULL, now(), now())
+        RETURNING id, status
+      `,
+      [originalJob.pipeline_id, originalJob.payload],
+    );
+
+    const newJob = insertedJobResult.rows[0];
+
+    await client.query(
+      `
+        INSERT INTO job_status_history (
+          job_id,
+          from_status,
+          to_status,
+          reason,
+          actor,
+          metadata,
+          changed_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+      `,
+      [
+        newJob.id,
+        null,
+        'queued',
+        'Manual replay requested from dashboard.',
+        'api',
+        { replayedFromJobId: originalJob.id },
+      ],
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      originalJobId: originalJob.id,
+      newJobId: newJob.id,
+      status: newJob.status,
+      message: 'Job replay queued successfully.',
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Forces a failed delivery attempt back into the retry queue immediately.
+export async function retryDeliveryAttempt(
+  jobId: string,
+  attemptId: number,
+): Promise<DeliveryAttemptActionResult | null> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const attemptResult = await client.query<{
+      id: number;
+      job_id: string;
+      attempt_status: string;
+      job_status: JobStatus;
+    }>(
+      `
+        SELECT
+          da.id,
+          da.job_id,
+          da.status AS attempt_status,
+          j.status AS job_status
+        FROM delivery_attempts da
+        INNER JOIN jobs j ON j.id = da.job_id
+        WHERE da.job_id = $1
+          AND da.id = $2
+        FOR UPDATE OF da, j
+      `,
+      [jobId, attemptId],
+    );
+
+    if (attemptResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const attempt = attemptResult.rows[0];
+
+    if (attempt.attempt_status !== 'failed_retryable' && attempt.attempt_status !== 'failed_final') {
+      throw new JobsRepositoryError(
+        409,
+        'DELIVERY_ATTEMPT_NOT_RETRYABLE',
+        'Only failed delivery attempts can be retried manually.',
+        { status: attempt.attempt_status },
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE delivery_attempts
+        SET
+          status = 'failed_retryable',
+          next_retry_at = now()
+        WHERE id = $1
+      `,
+      [attemptId],
+    );
+
+    let nextJobStatus = attempt.job_status;
+
+    if (attempt.job_status === 'failed_delivery') {
+      await client.query(
+        `
+          UPDATE jobs
+          SET
+            status = 'processed',
+            completed_at = NULL,
+            last_error = NULL,
+            updated_at = now()
+          WHERE id = $1
+        `,
+        [jobId],
+      );
+
+      await client.query(
+        `
+          INSERT INTO job_status_history (
+            job_id,
+            from_status,
+            to_status,
+            reason,
+            actor,
+            changed_at
+          )
+          VALUES ($1, $2, $3, $4, $5, now())
+        `,
+        [jobId, 'failed_delivery', 'processed', 'Manual delivery retry requested from dashboard.', 'api'],
+      );
+
+      nextJobStatus = 'processed';
+    }
+
+    await client.query('COMMIT');
+
+    return {
+      jobId,
+      attemptId,
+      status: nextJobStatus,
+      message:
+        nextJobStatus === 'processed'
+          ? 'Delivery retry scheduled immediately. Job moved back to processed.'
+          : 'Delivery retry scheduled immediately.',
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Cancels a pending retry and, if needed, marks the job as a final delivery failure.
+export async function cancelDeliveryRetry(
+  jobId: string,
+  attemptId: number,
+): Promise<DeliveryAttemptActionResult | null> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const attemptResult = await client.query<{
+      id: number;
+      job_id: string;
+      attempt_status: string;
+      job_status: JobStatus;
+    }>(
+      `
+        SELECT
+          da.id,
+          da.job_id,
+          da.status AS attempt_status,
+          j.status AS job_status
+        FROM delivery_attempts da
+        INNER JOIN jobs j ON j.id = da.job_id
+        WHERE da.job_id = $1
+          AND da.id = $2
+        FOR UPDATE OF da, j
+      `,
+      [jobId, attemptId],
+    );
+
+    if (attemptResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const attempt = attemptResult.rows[0];
+
+    if (attempt.attempt_status !== 'failed_retryable') {
+      throw new JobsRepositoryError(
+        409,
+        'DELIVERY_ATTEMPT_NOT_CANCELLABLE',
+        'Only pending retry attempts can be cancelled.',
+        { status: attempt.attempt_status },
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE delivery_attempts
+        SET
+          status = 'failed_final',
+          next_retry_at = NULL
+        WHERE id = $1
+      `,
+      [attemptId],
+    );
+
+    let nextJobStatus = attempt.job_status;
+
+    if (attempt.job_status === 'processed') {
+      await client.query(
+        `
+          UPDATE jobs
+          SET
+            status = 'failed_delivery',
+            completed_at = now(),
+            last_error = $2,
+            updated_at = now()
+          WHERE id = $1
+        `,
+        [
+          jobId,
+          {
+            message: 'A pending delivery retry was cancelled manually.',
+            attemptId,
+            jobId,
+          },
+        ],
+      );
+
+      await client.query(
+        `
+          INSERT INTO job_status_history (
+            job_id,
+            from_status,
+            to_status,
+            reason,
+            actor,
+            changed_at
+          )
+          VALUES ($1, $2, $3, $4, $5, now())
+        `,
+        [jobId, 'processed', 'failed_delivery', 'Manual delivery retry cancelled from dashboard.', 'api'],
+      );
+
+      nextJobStatus = 'failed_delivery';
+    }
+
+    await client.query('COMMIT');
+
+    return {
+      jobId,
+      attemptId,
+      status: nextJobStatus,
+      message:
+        nextJobStatus === 'failed_delivery'
+          ? 'Pending delivery retry cancelled. Job marked failed_delivery.'
+          : 'Pending delivery retry cancelled.',
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

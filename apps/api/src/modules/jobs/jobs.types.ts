@@ -23,6 +23,13 @@ export const jobIdParamSchema = z.object({
   jobId: z.string().uuid(),
 });
 
+// Path params schema for delivery-attempt control routes nested under jobs.
+export const deliveryAttemptParamSchema = z.object({
+  jobId: z.string().uuid(),
+  attemptId: z.coerce.number().int().positive(),
+});
+
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type ListJobsQuery = z.infer<typeof listJobsQuerySchema>;
 export type JobIdParam = z.infer<typeof jobIdParamSchema>;
+export type DeliveryAttemptParam = z.infer<typeof deliveryAttemptParamSchema>;

@@ -109,11 +109,16 @@ export type JobListItem = {
 
 export type DeliveryAttempt = {
   id: number;
+  subscriber_id: string;
   attempt_no: number;
   target_url: string;
   status: string;
+  request_payload?: Record<string, unknown> | null;
   response_status_code: number | null;
+  response_body?: string | null;
   error_message?: string | null;
+  next_retry_at?: string | null;
+  duration_ms?: number | null;
   scheduled_at?: string | null;
   created_at?: string | null;
   started_at: string | null;
@@ -317,6 +322,10 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [jobDetailsError, setJobDetailsError] = useState<string>("");
   const [retryingJobId, setRetryingJobId] = useState<string>("");
   const [retryJobResult, setRetryJobResult] = useState<SendResult>(null);
+  const [replayingJobId, setReplayingJobId] = useState<string>("");
+  const [replayJobResult, setReplayJobResult] = useState<SendResult>(null);
+  const [deliveryActionAttemptId, setDeliveryActionAttemptId] = useState<number | null>(null);
+  const [deliveryActionResult, setDeliveryActionResult] = useState<SendResult>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logsError, setLogsError] = useState<string>("");
@@ -1123,6 +1132,107 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     [apiKey, loadJobDetails, loadOverview],
   );
 
+  const handleReplayJob = useCallback(
+    async (jobId: string) => {
+      setReplayingJobId(jobId);
+      setReplayJobResult(null);
+
+      try {
+        const response = await apiRequest<ApiSingleResponse<{ newJobId?: string; message?: string }>>(
+          `/jobs/${jobId}/replay`,
+          {
+            apiKey,
+            method: "POST",
+          },
+        );
+
+        setReplayJobResult({
+          type: "success",
+          message:
+            response.data?.message && response.data?.newJobId
+              ? `${response.data.message} New job: ${response.data.newJobId}`
+              : response.data?.message || "Job replay queued.",
+        });
+
+        await loadOverview(false);
+      } catch (error) {
+        setReplayJobResult({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to replay job.",
+        });
+      } finally {
+        setReplayingJobId("");
+      }
+    },
+    [apiKey, loadOverview],
+  );
+
+  const handleRetryDeliveryAttempt = useCallback(
+    async (jobId: string, attemptId: number) => {
+      setDeliveryActionAttemptId(attemptId);
+      setDeliveryActionResult(null);
+
+      try {
+        const response = await apiRequest<ApiSingleResponse<{ message?: string }>>(
+          `/jobs/${jobId}/delivery-attempts/${attemptId}/retry`,
+          {
+            apiKey,
+            method: "POST",
+          },
+        );
+
+        setDeliveryActionResult({
+          type: "success",
+          message: response.data?.message || "Delivery retry scheduled immediately.",
+        });
+
+        await loadOverview(false);
+        await loadJobDetails(jobId, false);
+      } catch (error) {
+        setDeliveryActionResult({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to retry delivery attempt.",
+        });
+      } finally {
+        setDeliveryActionAttemptId(null);
+      }
+    },
+    [apiKey, loadJobDetails, loadOverview],
+  );
+
+  const handleCancelDeliveryRetry = useCallback(
+    async (jobId: string, attemptId: number) => {
+      setDeliveryActionAttemptId(attemptId);
+      setDeliveryActionResult(null);
+
+      try {
+        const response = await apiRequest<ApiSingleResponse<{ message?: string }>>(
+          `/jobs/${jobId}/delivery-attempts/${attemptId}/cancel-retry`,
+          {
+            apiKey,
+            method: "POST",
+          },
+        );
+
+        setDeliveryActionResult({
+          type: "success",
+          message: response.data?.message || "Delivery retry cancelled.",
+        });
+
+        await loadOverview(false);
+        await loadJobDetails(jobId, false);
+      } catch (error) {
+        setDeliveryActionResult({
+          type: "error",
+          message: error instanceof Error ? error.message : "Failed to cancel delivery retry.",
+        });
+      } finally {
+        setDeliveryActionAttemptId(null);
+      }
+    },
+    [apiKey, loadJobDetails, loadOverview],
+  );
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
@@ -1343,6 +1453,13 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     retryingJobId,
     retryJobResult,
     handleRetryJob,
+    replayingJobId,
+    replayJobResult,
+    handleReplayJob,
+    deliveryActionAttemptId,
+    deliveryActionResult,
+    handleRetryDeliveryAttempt,
+    handleCancelDeliveryRetry,
     loadingLogs,
     logsError,
     workerHealth,

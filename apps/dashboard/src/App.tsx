@@ -285,7 +285,14 @@ export default function App(): JSX.Element {
                   jobDetailsError={dashboard.jobDetailsError}
                   retryingJobId={dashboard.retryingJobId}
                   retryJobResult={dashboard.retryJobResult}
+                  replayingJobId={dashboard.replayingJobId}
+                  replayJobResult={dashboard.replayJobResult}
+                  deliveryActionAttemptId={dashboard.deliveryActionAttemptId}
+                  deliveryActionResult={dashboard.deliveryActionResult}
                   onRetryJob={dashboard.handleRetryJob}
+                  onReplayJob={dashboard.handleReplayJob}
+                  onRetryDeliveryAttempt={dashboard.handleRetryDeliveryAttempt}
+                  onCancelDeliveryRetry={dashboard.handleCancelDeliveryRetry}
                   onClearSelection={() => dashboard.setSelectedJobId("")}
                 />
               </Drawer>
