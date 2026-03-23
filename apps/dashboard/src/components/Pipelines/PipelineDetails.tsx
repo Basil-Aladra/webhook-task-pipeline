@@ -1,4 +1,5 @@
 import { PipelineDetails as PipelineDetailsType, PipelineListItem } from "../../hooks/useDashboard";
+import { useToast } from "../Toast/ToastProvider";
 
 type PipelineDetailsProps = {
   selectedPipelineId: string;
@@ -10,9 +11,11 @@ type PipelineDetailsProps = {
     failedJobsCount: number;
     latestActivityAt: string | null;
   };
+  togglingPipelineStatusId?: string;
   onManageSecret: (pipeline: PipelineListItem) => void;
   onSendTestWebhook: (pipeline: PipelineListItem) => void;
   onViewJobs: (pipeline: PipelineListItem) => void;
+  onTogglePipelineStatus: (pipeline: PipelineListItem) => Promise<"active" | "paused" | "archived">;
   onClearSelection?: () => void;
 };
 
@@ -47,11 +50,14 @@ export function PipelineDetails({
   loadingPipelineDetails,
   pipelineDetailsError,
   operationalStats,
+  togglingPipelineStatusId,
   onManageSecret,
   onSendTestWebhook,
   onViewJobs,
+  onTogglePipelineStatus,
   onClearSelection,
 }: PipelineDetailsProps): JSX.Element {
+  const { showToast } = useToast();
   const pipelineSummary = selectedPipeline
     ? {
         id: selectedPipeline.id,
@@ -63,6 +69,25 @@ export function PipelineDetails({
         subscribersCount: selectedPipeline.subscribers.length,
       }
     : null;
+
+  const handleToggleStatus = async () => {
+    if (!pipelineSummary) {
+      return;
+    }
+
+    try {
+      const nextStatus = await onTogglePipelineStatus(pipelineSummary);
+      showToast({
+        type: "success",
+        message: nextStatus === "active" ? "Pipeline activated" : "Pipeline paused",
+      });
+    } catch (error) {
+      showToast({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to update pipeline status.",
+      });
+    }
+  };
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
@@ -181,17 +206,33 @@ export function PipelineDetails({
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-3">
-                <h3 className="text-sm font-semibold text-slate-700">Quick Actions</h3>
-                <p className="ui-subtitle">Jump to related workflows without leaving the pipeline context.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {pipelineSummary && (
-                  <>
-                    <button type="button" onClick={() => onManageSecret(pipelineSummary)} className="ui-btn-secondary">
-                      Manage Secret
-                    </button>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-700">Quick Actions</h3>
+                  <p className="ui-subtitle">Jump to related workflows without leaving the pipeline context.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {pipelineSummary && (
+                    <>
+                      {pipelineSummary.status !== "archived" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleToggleStatus();
+                          }}
+                          disabled={togglingPipelineStatusId === pipelineSummary.id}
+                          className={pipelineSummary.status === "active" ? "ui-btn-secondary" : "ui-btn-primary"}
+                        >
+                          {togglingPipelineStatusId === pipelineSummary.id
+                            ? "Updating..."
+                            : pipelineSummary.status === "active"
+                              ? "Pause Pipeline"
+                              : "Activate Pipeline"}
+                        </button>
+                      )}
+                      <button type="button" onClick={() => onManageSecret(pipelineSummary)} className="ui-btn-secondary">
+                        Manage Secret
+                      </button>
                     <button type="button" onClick={() => onSendTestWebhook(pipelineSummary)} className="ui-btn-secondary">
                       Send Test Webhook
                     </button>

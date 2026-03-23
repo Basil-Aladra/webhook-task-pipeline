@@ -1,4 +1,6 @@
+import type { MouseEvent } from "react";
 import { PipelineListItem } from "../../hooks/useDashboard";
+import { useToast } from "../Toast/ToastProvider";
 
 type CreatePipelineResult = {
   type: "success" | "error";
@@ -9,9 +11,11 @@ type PipelinesTableProps = {
   pipelines: PipelineListItem[];
   createPipelineResult: CreatePipelineResult;
   selectedPipelineId: string;
+  togglingPipelineStatusId?: string;
   onOpenCreateModal: () => void;
   onSelectPipeline: (pipeline: PipelineListItem) => void;
   onManageSecret: (pipeline: PipelineListItem) => void;
+  onTogglePipelineStatus: (pipeline: PipelineListItem) => Promise<"active" | "paused" | "archived">;
 };
 
 function statusClass(status: PipelineListItem["status"]): string {
@@ -24,10 +28,31 @@ export function PipelinesTable({
   pipelines,
   createPipelineResult,
   selectedPipelineId,
+  togglingPipelineStatusId,
   onOpenCreateModal,
   onSelectPipeline,
   onManageSecret,
+  onTogglePipelineStatus,
 }: PipelinesTableProps): JSX.Element {
+  const { showToast } = useToast();
+
+  const handleToggleStatus = async (event: MouseEvent<HTMLButtonElement>, pipeline: PipelineListItem) => {
+    event.stopPropagation();
+
+    try {
+      const nextStatus = await onTogglePipelineStatus(pipeline);
+      showToast({
+        type: "success",
+        message: nextStatus === "active" ? "Pipeline activated" : "Pipeline paused",
+      });
+    } catch (error) {
+      showToast({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to update pipeline status.",
+      });
+    }
+  };
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -65,6 +90,7 @@ export function PipelinesTable({
                 <th className="ui-table-head-cell">
                   Subscribers Count
                 </th>
+                <th className="ui-table-head-cell">Status Action</th>
                 <th className="ui-table-head-cell">Actions</th>
               </tr>
             </thead>
@@ -97,6 +123,24 @@ export function PipelinesTable({
                   </td>
                   <td className="px-3 py-2">{pipeline.actionsCount ?? 0}</td>
                   <td className="px-3 py-2">{pipeline.subscribersCount ?? 0}</td>
+                  <td className="px-3 py-2">
+                    {pipeline.status !== "archived" && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          void handleToggleStatus(event, pipeline);
+                        }}
+                        disabled={togglingPipelineStatusId === pipeline.id}
+                        className={pipeline.status === "active" ? "ui-btn-secondary" : "ui-btn-primary"}
+                      >
+                        {togglingPipelineStatusId === pipeline.id
+                          ? "Updating..."
+                          : pipeline.status === "active"
+                            ? "Pause"
+                            : "Activate"}
+                      </button>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <button

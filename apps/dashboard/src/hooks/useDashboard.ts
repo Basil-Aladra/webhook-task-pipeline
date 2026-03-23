@@ -288,6 +288,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     message: string;
     webhookSecret?: string;
   } | null>(null);
+  const [togglingPipelineStatusId, setTogglingPipelineStatusId] = useState<string>("");
   const [selectedPipelineDetailsId, setSelectedPipelineDetailsId] = useState<string>("");
   const [selectedPipelineDetails, setSelectedPipelineDetails] = useState<PipelineDetails | null>(null);
   const [loadingPipelineDetails, setLoadingPipelineDetails] = useState<boolean>(false);
@@ -923,6 +924,56 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     }
   }, [apiKey, loadOverview, selectedSecretPipeline]);
 
+  const handleTogglePipelineStatus = useCallback(
+    async (pipeline: PipelineListItem): Promise<PipelineStatus> => {
+      const nextStatus: PipelineStatus = pipeline.status === "active" ? "paused" : "active";
+      setTogglingPipelineStatusId(pipeline.id);
+
+      try {
+        const response = await apiRequest<ApiSingleResponse<PipelineDetails>>(`/pipelines/${pipeline.id}`, {
+          apiKey,
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: nextStatus,
+          }),
+        });
+
+        const updatedPipeline = response.data;
+
+        setPipelines((current) =>
+          current.map((item) =>
+            item.id === pipeline.id
+              ? {
+                  ...item,
+                  status: updatedPipeline.status,
+                  hasWebhookSecret: updatedPipeline.hasWebhookSecret,
+                }
+              : item,
+          ),
+        );
+
+        setSelectedPipelineDetails((current) =>
+          current && current.id === pipeline.id
+            ? {
+                ...current,
+                status: updatedPipeline.status,
+                hasWebhookSecret: updatedPipeline.hasWebhookSecret,
+                updatedAt: updatedPipeline.updatedAt,
+              }
+            : current,
+        );
+
+        return updatedPipeline.status;
+      } finally {
+        setTogglingPipelineStatusId("");
+      }
+    },
+    [apiKey],
+  );
+
   const handleOpenPipelineDetails = useCallback((pipeline: PipelineListItem) => {
     setSelectedPipelineDetailsId(pipeline.id);
   }, []);
@@ -1238,9 +1289,11 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     rotatingWebhookSecret,
     pipelineSecretError,
     pipelineSecretResult,
+    togglingPipelineStatusId,
     handleOpenPipelineSecretModal,
     handleClosePipelineSecretModal,
     handleRotateWebhookSecret,
+    handleTogglePipelineStatus,
     handleViewJobsForPipeline,
     clearJobsPipelineFilter,
     selectedJobId,

@@ -216,9 +216,11 @@ export default function App(): JSX.Element {
                 pipelines={dashboard.pipelines}
                 createPipelineResult={dashboard.createPipelineResult}
                 selectedPipelineId={dashboard.selectedPipelineDetailsId}
+                togglingPipelineStatusId={dashboard.togglingPipelineStatusId}
                 onOpenCreateModal={dashboard.handleOpenCreatePipelineModal}
                 onSelectPipeline={dashboard.handleOpenPipelineDetails}
                 onManageSecret={dashboard.handleOpenPipelineSecretModal}
+                onTogglePipelineStatus={dashboard.handleTogglePipelineStatus}
               />
 
               <Drawer
@@ -231,6 +233,7 @@ export default function App(): JSX.Element {
                   loadingPipelineDetails={dashboard.loadingPipelineDetails}
                   pipelineDetailsError={dashboard.pipelineDetailsError}
                   operationalStats={dashboard.selectedPipelineOperationalStats}
+                  togglingPipelineStatusId={dashboard.togglingPipelineStatusId}
                   onManageSecret={dashboard.handleOpenPipelineSecretModal}
                   onSendTestWebhook={(pipeline) => {
                     dashboard.setSelectedPipelineId(pipeline.id);
@@ -242,6 +245,7 @@ export default function App(): JSX.Element {
                     dashboard.handleClosePipelineDetails();
                     navigateTo("jobs");
                   }}
+                  onTogglePipelineStatus={dashboard.handleTogglePipelineStatus}
                   onClearSelection={dashboard.handleClosePipelineDetails}
                 />
               </Drawer>

@@ -492,3 +492,31 @@ Common error shape:
   - error: `{ error: { code, message, details? } }`
 - Reuse existing worker flow instead of adding synchronous processing in the API.
 - Keep migrations idempotent because the current migration runner reruns all `.sql` files on startup.
+
+## Feature: Pipeline Status Toggle
+
+### Description
+The dashboard now allows users to switch pipelines between `active` and `paused` directly from the Pipelines table and the Pipeline Details drawer without opening an edit form.
+
+### Backend Changes
+- No new backend endpoint was added.
+- The dashboard reuses the existing `PATCH /api/v1/pipelines/:pipelineId` pipeline update API with a partial body containing only `status`.
+
+### Frontend Changes
+- `apps/dashboard/src/hooks/useDashboard.ts`
+  - added `handleTogglePipelineStatus()`
+  - added `togglingPipelineStatusId` loading state
+  - updates pipeline list state and selected pipeline details state after success
+- `apps/dashboard/src/components/Pipelines/PipelinesTable.tsx`
+  - added `Activate` / `Pause` action in the table
+  - shows `Updating...` while the request is in flight
+- `apps/dashboard/src/components/Pipelines/PipelineDetails.tsx`
+  - added the same status action in the drawer quick-actions area
+- `apps/dashboard/src/App.tsx`
+  - wired the new props into the table and drawer
+
+### How it works
+When a user clicks the toggle action, the dashboard computes the next status (`active` or `paused`) and sends a `PATCH` request for that pipeline. On success, the dashboard updates both the Pipelines table row and the currently opened Pipeline Details drawer state so the UI stays in sync.
+
+### Demo Usage
+Open `#/pipelines`, click `Activate` on a paused pipeline or `Pause` on an active pipeline, and show the success toast plus the immediate status update in the table. Then open the same pipeline in the drawer and demonstrate the same toggle from the quick-actions section.
