@@ -287,6 +287,9 @@ export default function App(): JSX.Element {
               onRetryDelayChange={(value) => dashboard.setRetryDelayMs(Math.max(0, value) * 1000)}
               onResetDashboardState={dashboard.resetDashboardSettings}
               onClearLocalSettings={dashboard.clearLocalSettings}
+              workerHealth={dashboard.workerHealth}
+              loadingWorkerHealth={dashboard.loadingWorkerHealth}
+              workerHealthError={dashboard.workerHealthError}
             />
           )}
 

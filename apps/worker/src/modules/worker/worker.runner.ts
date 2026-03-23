@@ -1,4 +1,5 @@
 import { logger } from '../../shared/logger';
+import { markWorkerHeartbeat } from '../health/worker-health';
 
 import { getPipelineSubscribers, getSubscriberById } from '../../db/pipelines.repository';
 import {
@@ -300,14 +301,22 @@ async function safePoll(): Promise<void> {
 // Starts the polling loop and keeps the worker alive.
 export function start(): void {
   const pollIntervalMs = Number(process.env.WORKER_POLL_INTERVAL_MS) || 5000;
+  const heartbeatIntervalMs = Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS) || 5000;
 
   logger.info('Worker started', {
     pollIntervalMs,
+    heartbeatIntervalMs,
   });
 
+  markWorkerHeartbeat();
   void safePoll();
 
   setInterval(() => {
+    markWorkerHeartbeat();
     void safePoll();
   }, pollIntervalMs);
+
+  setInterval(() => {
+    markWorkerHeartbeat();
+  }, heartbeatIntervalMs);
 }

@@ -43,6 +43,13 @@ export type Metrics = {
   jobsByStatus: Record<JobStatus, number>;
 };
 
+export type WorkerHealth = {
+  status: "running" | "unknown";
+  workerId: string | null;
+  lastHeartbeat: string | null;
+  uptimeSeconds: number | null;
+};
+
 export type PipelineListItem = {
   id: string;
   name: string;
@@ -135,6 +142,13 @@ const DEFAULT_METRICS: Metrics = {
     failed_processing: 0,
     failed_delivery: 0,
   },
+};
+
+const DEFAULT_WORKER_HEALTH: WorkerHealth = {
+  status: "unknown",
+  workerId: null,
+  lastHeartbeat: null,
+  uptimeSeconds: null,
 };
 
 const DEFAULT_WEBHOOK_PAYLOAD = `{
@@ -264,6 +278,9 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logsError, setLogsError] = useState<string>("");
+  const [workerHealth, setWorkerHealth] = useState<WorkerHealth>(DEFAULT_WORKER_HEALTH);
+  const [loadingWorkerHealth, setLoadingWorkerHealth] = useState<boolean>(false);
+  const [workerHealthError, setWorkerHealthError] = useState<string>("");
   const [logsLevelFilter, setLogsLevelFilter] = useState<"" | LogLevel>("");
   const [logsSourceFilter, setLogsSourceFilter] = useState<"" | LogSource>("");
   const [logsSearchText, setLogsSearchText] = useState<string>("");
@@ -727,6 +744,28 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     [apiKey],
   );
 
+  const loadWorkerHealth = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setLoadingWorkerHealth(true);
+      }
+      setWorkerHealthError("");
+
+      try {
+        const response = await apiRequest<ApiSingleResponse<WorkerHealth>>("/worker/health", { apiKey });
+        setWorkerHealth(response.data || DEFAULT_WORKER_HEALTH);
+      } catch (error) {
+        setWorkerHealth(DEFAULT_WORKER_HEALTH);
+        setWorkerHealthError(error instanceof Error ? error.message : "Failed to load worker health.");
+      } finally {
+        if (!silent) {
+          setLoadingWorkerHealth(false);
+        }
+      }
+    },
+    [apiKey],
+  );
+
   const handleRetryJob = useCallback(
     async (jobId: string) => {
       setRetryingJobId(jobId);
@@ -825,6 +864,12 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   }, [activePage, loadLogs]);
 
   useEffect(() => {
+    if (activePage === "settings") {
+      void loadWorkerHealth();
+    }
+  }, [activePage, loadWorkerHealth]);
+
+  useEffect(() => {
     if (!selectedJobId) {
       setSelectedJob(null);
       setJobDetailsError("");
@@ -845,9 +890,12 @@ export function useDashboard(activePage: DashboardPage = "overview") {
         return;
       }
 
-      if (activePage !== "settings") {
-        void loadOverview(true);
+      if (activePage === "settings") {
+        void loadWorkerHealth(true);
+        return;
       }
+
+      void loadOverview(true);
 
       if (selectedJobId && activePage === "jobs") {
         void loadJobDetails(selectedJobId, true);
@@ -855,7 +903,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     }, refreshIntervalMs);
 
     return () => clearInterval(intervalId);
-  }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, refreshIntervalMs, selectedJobId]);
+  }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, loadWorkerHealth, refreshIntervalMs, selectedJobId]);
 
   return {
     apiKey,
@@ -922,6 +970,9 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleRetryJob,
     loadingLogs,
     logsError,
+    workerHealth,
+    loadingWorkerHealth,
+    workerHealthError,
     logsLevelFilter,
     setLogsLevelFilter,
     logsSourceFilter,

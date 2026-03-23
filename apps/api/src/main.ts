@@ -11,6 +11,7 @@ import authRouter from './modules/auth/auth.routes';
 import metricsRouter from './modules/metrics/metrics.routes';
 import pipelinesRouter from './modules/pipelines/pipelines.routes';
 import webhooksRouter from './modules/webhooks/webhooks.routes';
+import workerRouter from './modules/worker/worker.routes';
 
 // Load environment variables from .env when running locally.
 dotenv.config();
@@ -45,6 +46,7 @@ app.use('/api/v1', apiRateLimiter);
 app.use('/api/v1/pipelines', apiKeyAuth);
 app.use('/api/v1/jobs', apiKeyAuth);
 app.use('/api/v1/metrics', apiKeyAuth);
+app.use('/api/v1/worker', apiKeyAuth);
 
 // Mount versioned API routes.
 app.use('/api/v1', authRouter);
@@ -52,6 +54,7 @@ app.use('/api/v1', pipelinesRouter);
 app.use('/api/v1', webhooksRouter);
 app.use('/api/v1', jobsRouter);
 app.use('/api/v1', metricsRouter);
+app.use('/api/v1', workerRouter);
 
 // Simple health endpoint used by local checks and container health probes.
 app.get('/health', (_req, res) => {

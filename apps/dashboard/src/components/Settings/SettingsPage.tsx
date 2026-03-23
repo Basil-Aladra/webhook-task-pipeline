@@ -14,6 +14,14 @@ type SettingsPageProps = {
   onRetryDelayChange: (value: number) => void;
   onResetDashboardState: () => void;
   onClearLocalSettings: () => void;
+  workerHealth: {
+    status: "running" | "unknown";
+    workerId: string | null;
+    lastHeartbeat: string | null;
+    uptimeSeconds: number | null;
+  };
+  loadingWorkerHealth: boolean;
+  workerHealthError: string;
 };
 
 function environmentLabel(): string {
@@ -26,6 +34,25 @@ function environmentLabel(): string {
   }
 
   return "production";
+}
+
+function formatRelativeTime(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  const diffMs = Date.now() - new Date(value).getTime();
+  if (Number.isNaN(diffMs)) {
+    return "-";
+  }
+
+  const seconds = Math.max(0, Math.floor(diffMs / 1000));
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ago`;
 }
 
 export function SettingsPage({
@@ -41,6 +68,9 @@ export function SettingsPage({
   onRetryDelayChange,
   onResetDashboardState,
   onClearLocalSettings,
+  workerHealth,
+  loadingWorkerHealth,
+  workerHealthError,
 }: SettingsPageProps): JSX.Element {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [copyFeedback, setCopyFeedback] = useState<string>("");
@@ -250,8 +280,24 @@ export function SettingsPage({
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Worker Status</p>
                 <div className="mt-2">
-                  <span className="ui-badge ui-badge-neutral">Unknown</span>
+                  {loadingWorkerHealth ? (
+                    <span className="ui-badge ui-badge-neutral">Loading...</span>
+                  ) : (
+                    <span className={`ui-badge ${workerHealth.status === "running" ? "ui-badge-success" : "ui-badge-neutral"}`}>
+                      {workerHealth.status === "running" ? "Running" : "Unknown"}
+                    </span>
+                  )}
                 </div>
+                {workerHealth.workerId && (
+                  <p className="mt-2 text-xs text-slate-500">Worker ID: {workerHealth.workerId}</p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  Last heartbeat: {loadingWorkerHealth ? "Loading..." : formatRelativeTime(workerHealth.lastHeartbeat)}
+                </p>
+                {typeof workerHealth.uptimeSeconds === "number" && (
+                  <p className="mt-1 text-xs text-slate-500">Uptime: {workerHealth.uptimeSeconds}s</p>
+                )}
+                {workerHealthError && <p className="mt-2 text-xs text-red-600">{workerHealthError}</p>}
               </div>
             </div>
           </section>

@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { logger } from './shared/logger';
+import { startWorkerHealthServer } from './modules/health/worker-health.server';
 
 import { start } from './modules/worker/worker.runner';
 
@@ -11,4 +12,5 @@ const workerId = process.env.WORKER_ID || 'worker-1';
 logger.info('Worker started', {
   workerId,
 });
+startWorkerHealthServer();
 start();
