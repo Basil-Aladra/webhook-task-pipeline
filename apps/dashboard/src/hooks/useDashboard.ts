@@ -28,6 +28,14 @@ type ApiSingleResponse<T> = {
   data: T;
 };
 
+type ResetRuntimeDataResponse = {
+  deletedDeliveryAttempts: number;
+  deletedJobStatusHistory: number;
+  deletedJobs: number;
+  deletedLogs: number;
+  message: string;
+};
+
 export type Stats = {
   totalPipelines: number;
   totalJobs: number;
@@ -1046,6 +1054,36 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     }
   }, [apiKey]);
 
+  const resetRuntimeData = useCallback(
+    async (confirmedApiKey: string): Promise<ResetRuntimeDataResponse> => {
+      const response = await apiRequest<ApiSingleResponse<ResetRuntimeDataResponse>>(
+        "/admin/reset-runtime-data",
+        {
+          apiKey: confirmedApiKey,
+          method: "POST",
+        },
+      );
+
+      setJobs([]);
+      setDeadLetterJobs([]);
+      setLogs([]);
+      setSelectedJobId("");
+      setSelectedJob(null);
+      setJobDetailsError("");
+      setSelectedPipelineOperationalStats((current) => ({
+        ...current,
+        jobsCount: 0,
+        failedJobsCount: 0,
+        latestActivityAt: null,
+      }));
+
+      await Promise.all([loadOverview(true), loadLogs(true)]);
+
+      return response.data;
+    },
+    [loadLogs, loadOverview],
+  );
+
   const handleRetryJob = useCallback(
     async (jobId: string) => {
       setRetryingJobId(jobId);
@@ -1256,6 +1294,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleSendWebhook,
     handleApplyJobsFilter,
     clearJobsFilters,
+    resetRuntimeData,
     showCreatePipelineModal,
     creatingPipeline,
     createPipelineError,

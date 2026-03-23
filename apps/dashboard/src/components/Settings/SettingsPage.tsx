@@ -15,6 +15,13 @@ type SettingsPageProps = {
   onRetryDelayChange: (value: number) => void;
   onResetDashboardState: () => void;
   onClearLocalSettings: () => void;
+  onResetRuntimeData: (confirmedApiKey: string) => Promise<{
+    deletedDeliveryAttempts: number;
+    deletedJobStatusHistory: number;
+    deletedJobs: number;
+    deletedLogs: number;
+    message: string;
+  }>;
   workerHealth: {
     status: "running" | "unknown";
     workerId: string | null;
@@ -69,6 +76,7 @@ export function SettingsPage({
   onRetryDelayChange,
   onResetDashboardState,
   onClearLocalSettings,
+  onResetRuntimeData,
   workerHealth,
   loadingWorkerHealth,
   workerHealthError,
@@ -76,6 +84,9 @@ export function SettingsPage({
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [actionFeedback, setActionFeedback] = useState<string>("");
   const [actionFeedbackType, setActionFeedbackType] = useState<"success" | "info">("info");
+  const [showResetDemoDataModal, setShowResetDemoDataModal] = useState<boolean>(false);
+  const [resetDemoDataApiKey, setResetDemoDataApiKey] = useState<string>("");
+  const [resetDemoDataLoading, setResetDemoDataLoading] = useState<boolean>(false);
   const { showToast } = useToast();
 
   const envLabel = useMemo(() => environmentLabel(), []);
@@ -114,6 +125,37 @@ export function SettingsPage({
     setActionFeedbackType("success");
     setActionFeedback("Local settings cleared.");
     window.setTimeout(() => setActionFeedback(""), 2500);
+  };
+
+  const handleConfirmResetDemoData = async () => {
+    const confirmedApiKey = resetDemoDataApiKey.trim();
+
+    if (!confirmedApiKey) {
+      showToast({
+        type: "error",
+        message: "Enter an API key to confirm the reset.",
+      });
+      return;
+    }
+
+    setResetDemoDataLoading(true);
+
+    try {
+      const result = await onResetRuntimeData(confirmedApiKey);
+      showToast({
+        type: "success",
+        message: `${result.message} Deleted ${result.deletedJobs} jobs and ${result.deletedLogs} logs.`,
+      });
+      setShowResetDemoDataModal(false);
+      setResetDemoDataApiKey("");
+    } catch (error) {
+      showToast({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to reset demo data.",
+      });
+    } finally {
+      setResetDemoDataLoading(false);
+    }
   };
 
   return (
@@ -320,6 +362,13 @@ export function SettingsPage({
               <button type="button" onClick={handleClearLocalSettings} className="ui-btn-danger w-full">
                 Clear Local Settings
               </button>
+              <button
+                type="button"
+                onClick={() => setShowResetDemoDataModal(true)}
+                className="ui-btn-danger w-full"
+              >
+                Reset Demo Data
+              </button>
             </div>
 
             {actionFeedback && (
@@ -330,6 +379,67 @@ export function SettingsPage({
           </section>
         </div>
       </div>
+
+      {showResetDemoDataModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-xl border border-red-200 bg-white p-5 shadow-xl">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">Reset Demo Data</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                This action permanently clears runtime demo data only. Pipeline configuration and secrets are preserved.
+              </p>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              The following data will be deleted:
+              <ul className="mt-2 list-disc pl-5">
+                <li>jobs</li>
+                <li>job status history</li>
+                <li>delivery attempts</li>
+                <li>logs</li>
+              </ul>
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="reset-demo-data-api-key" className="mb-1 block text-sm font-medium text-slate-700">
+                Confirm with API Key
+              </label>
+              <input
+                id="reset-demo-data-api-key"
+                type="password"
+                value={resetDemoDataApiKey}
+                onChange={(event) => setResetDemoDataApiKey(event.target.value)}
+                placeholder="Enter API key"
+                autoComplete="off"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-red-400"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetDemoDataModal(false);
+                  setResetDemoDataApiKey("");
+                }}
+                className="ui-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleConfirmResetDemoData();
+                }}
+                disabled={resetDemoDataLoading}
+                className="ui-btn-danger"
+              >
+                {resetDemoDataLoading ? "Resetting..." : "Confirm Reset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
