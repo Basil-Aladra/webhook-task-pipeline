@@ -159,6 +159,67 @@ Suggested demo payload:
 }
 ```
 
+### Demo walkthrough
+
+1. Seed the demo pipelines:
+
+```bash
+npm run demo:seed
+```
+
+2. Use these pipelines for the main scenarios:
+
+- `demo-success`: successful delivery
+- `demo-retryable-failure`: retryable failure with pending retries
+- `demo-final-failure`: immediate final failure / dead-letter path
+
+3. Send a sample webhook from the dashboard:
+
+- open `Overview`
+- in `Send Webhook`, choose one of the demo pipelines
+- click `Load Demo Payload`
+- click `Send Webhook`
+
+Or use `curl`:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/webhooks/demo-success \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payload": {
+      "orderId": "demo-1001",
+      "customerName": "Alice",
+      "amount": 42.5,
+      "status": "new"
+    },
+    "idempotencyKey": "demo-evt-1001"
+  }'
+```
+
+4. Inspect the result in the dashboard:
+
+- `Overview`: latest job appears quickly
+- `Jobs`: open the Job Inspector
+- `Job Inspector -> Delivery Diagnostics`: inspect request body, response code, failure reason, and next retry time
+- `Job Inspector -> Operator Actions`: inspect manual action audit entries
+- `Logs`: inspect persisted API / worker / delivery logs
+- `Dead Letters`: inspect final delivery failures
+
+5. Demonstrate manual actions:
+
+- on `demo-retryable-failure`:
+  - use `Retry Delivery`
+  - use `Cancel Retry`
+- on a failed or completed job:
+  - use `Replay Job`
+
+After each action, show:
+
+- the updated delivery diagnostics
+- the `Operator Actions` section in the Job Inspector
+- the lifecycle timeline entry
+- the matching audit log on the `Logs` page
+
 ## 6. API Reference
 
 Base URL: `http://localhost:3000/api/v1`
