@@ -25,6 +25,61 @@ function computeNextRetryAt(retryBackoffMs: number): Date {
   return new Date(Date.now() + retryBackoffMs);
 }
 
+function isDiscordWebhookUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    const isDiscordHost =
+      parsedUrl.hostname === 'discord.com' || parsedUrl.hostname === 'discordapp.com';
+
+    return isDiscordHost && parsedUrl.pathname.startsWith('/api/webhooks/');
+  } catch {
+    return false;
+  }
+}
+
+function toDisplayValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'unknown';
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return 'unknown';
+}
+
+function buildDiscordMessageContent(payload: Record<string, unknown>): string {
+  const orderId = toDisplayValue(payload.orderId);
+  const customerName = toDisplayValue(payload.customerName);
+  const amount = toDisplayValue(payload.amount);
+  const status = toDisplayValue(payload.status);
+
+  return `New order received: #${orderId} | Customer: ${customerName} | Amount: ${amount} | Status: ${status}`;
+}
+
+function buildSubscriberRequestBody(
+  job: Job,
+  subscriber: PipelineSubscriber,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (isDiscordWebhookUrl(subscriber.targetUrl)) {
+    return {
+      content: buildDiscordMessageContent(payload),
+    };
+  }
+
+  return {
+    jobId: job.id,
+    pipelineId: job.pipelineId,
+    payload,
+  };
+}
+
 // Delivers one job payload to one subscriber and records attempt state.
 export async function deliverToSubscriber(
   job: Job,
@@ -56,13 +111,11 @@ export async function deliverToSubscriber(
   });
 
   try {
+    const requestBody = buildSubscriberRequestBody(job, subscriber, payload);
+
     const response = await sendPost(
       subscriber.targetUrl,
-      {
-        jobId: job.id,
-        pipelineId: job.pipelineId,
-        payload,
-      },
+      requestBody,
       subscriber.timeoutMs,
     );
 

@@ -331,5 +331,3 @@ This ensures code quality and deployment readiness on every push/PR to `main`.
 - Multiple worker replicas and horizontal scaling tests
 - Dead letter queue tooling and replay flow
 - Automated retry worker loop for `failed_retryable` deliveries
-
-## API KEY -> wpk_95664f096aeb7c0b23cd03fb388a6278
