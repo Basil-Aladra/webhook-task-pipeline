@@ -11,6 +11,14 @@ type JobDetailsProps = {
   onClearSelection?: () => void;
 };
 
+type TimelineItem = {
+  id: string;
+  label: string;
+  timestamp: string;
+  message?: string;
+  tone: "queued" | "processing" | "completed" | "failed" | "retry";
+};
+
 function formatDate(value: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
@@ -36,6 +44,70 @@ function statusClass(status: JobDetailsType["status"]): string {
   return "bg-orange-100 text-orange-700";
 }
 
+function timelineToneClass(tone: TimelineItem["tone"]): string {
+  if (tone === "queued") return "bg-slate-300";
+  if (tone === "processing") return "bg-blue-500";
+  if (tone === "completed") return "bg-emerald-500";
+  if (tone === "failed") return "bg-red-500";
+  return "bg-orange-500";
+}
+
+function mapStatusToTimelineTone(status: string): TimelineItem["tone"] {
+  if (status === "queued") return "queued";
+  if (status === "processing" || status === "processed") return "processing";
+  if (status === "completed" || status === "succeeded") return "completed";
+  if (status === "failed_processing" || status === "failed_delivery" || status === "failed_final") {
+    return "failed";
+  }
+  if (status === "failed_retryable") return "retry";
+  return "queued";
+}
+
+function buildTimelineItems(selectedJob: JobDetailsType): TimelineItem[] {
+  const statusItems: TimelineItem[] = (selectedJob.statusHistory || []).map((item) => ({
+    id: `status-${item.id}`,
+    label: item.to_status,
+    timestamp: item.changed_at,
+    message: item.reason ? `${item.reason} | actor: ${item.actor}` : `actor: ${item.actor}`,
+    tone: mapStatusToTimelineTone(item.to_status),
+  }));
+
+  const deliveryItems: TimelineItem[] = (selectedJob.deliveryAttempts || []).reduce<TimelineItem[]>(
+    (items, attempt) => {
+      const timestamp =
+        attempt.finished_at || attempt.started_at || attempt.scheduled_at || attempt.created_at;
+
+      if (!timestamp) {
+        return items;
+      }
+
+      const extra =
+        attempt.error_message ||
+        (typeof attempt.response_status_code === "number"
+          ? `HTTP ${attempt.response_status_code}`
+          : undefined);
+
+      items.push({
+        id: `delivery-${attempt.id}`,
+        label:
+          attempt.status === "failed_retryable"
+            ? `Retry attempt #${attempt.attempt_no}`
+            : `Delivery attempt #${attempt.attempt_no} ${attempt.status}`,
+        timestamp,
+        message: extra,
+        tone: mapStatusToTimelineTone(attempt.status),
+      });
+
+      return items;
+    },
+    [],
+  );
+
+  return [...statusItems, ...deliveryItems].sort(
+    (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
+  );
+}
+
 export function JobDetails({
   selectedJobId,
   selectedJob,
@@ -50,6 +122,7 @@ export function JobDetails({
   const canRetry =
     selectedJob?.status === "failed_delivery" || selectedJob?.status === "failed_processing";
   const isRetryingSelectedJob = Boolean(selectedJob && retryingJobId === selectedJob.id);
+  const timelineItems = selectedJob ? buildTimelineItems(selectedJob) : [];
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
@@ -168,23 +241,49 @@ export function JobDetails({
             </div>
 
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">Status History Timeline</h3>
-              {selectedJob.statusHistory?.length ? (
-                <ol className="space-y-2">
-                  {selectedJob.statusHistory.map((item) => (
-                    <li key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-sm font-medium text-slate-800">
-                        {item.from_status ? `${item.from_status} -> ${item.to_status}` : item.to_status}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {formatDate(item.changed_at)} | actor: {item.actor}
-                      </p>
-                      {item.reason && <p className="mt-1 text-xs text-slate-600">Reason: {item.reason}</p>}
-                    </li>
-                  ))}
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">Lifecycle Timeline</h3>
+              {timelineItems.length ? (
+                <ol className="space-y-0">
+                  {timelineItems.map((item, index) => {
+                    const isLast = index === timelineItems.length - 1;
+
+                    return (
+                      <li key={item.id} className="relative flex gap-3 pb-5 last:pb-0">
+                        <div className="relative flex w-5 justify-center">
+                          {!isLast && <span className="absolute top-3 h-full w-px bg-slate-200" />}
+                          <span
+                            className={`relative z-10 mt-1 block h-3 w-3 rounded-full ${timelineToneClass(item.tone)}`}
+                          />
+                        </div>
+
+                        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium capitalize text-slate-800">{item.label}</span>
+                            <span
+                              className={`ui-badge capitalize ${
+                                item.tone === "queued"
+                                  ? "ui-badge-neutral"
+                                  : item.tone === "processing"
+                                    ? "ui-badge-info"
+                                    : item.tone === "completed"
+                                      ? "ui-badge-success"
+                                      : item.tone === "failed"
+                                        ? "ui-badge-danger"
+                                        : "bg-orange-100 text-orange-700"
+                              }`}
+                            >
+                              {item.tone}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">{formatDate(item.timestamp)}</p>
+                          {item.message && <p className="mt-2 text-xs text-slate-600">{item.message}</p>}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ol>
               ) : (
-                <p className="ui-feedback-empty">No status history available.</p>
+                <p className="ui-feedback-empty">No lifecycle history available.</p>
               )}
             </div>
 
