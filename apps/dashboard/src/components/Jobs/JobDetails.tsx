@@ -25,7 +25,14 @@ type TimelineItem = {
   label: string;
   timestamp: string;
   message?: string;
-  tone: "queued" | "processing" | "completed" | "failed" | "retry";
+  tone: "queued" | "processing" | "completed" | "failed" | "retry" | "action";
+};
+
+type OperatorActionMeta = {
+  title: string;
+  outcomeLabel: string;
+  outcomeClassName: string;
+  tone: TimelineItem["tone"];
 };
 
 type ConfirmActionState = {
@@ -110,7 +117,105 @@ function timelineToneClass(tone: TimelineItem["tone"]): string {
   if (tone === "processing") return "bg-blue-500";
   if (tone === "completed") return "bg-emerald-500";
   if (tone === "failed") return "bg-red-500";
+  if (tone === "action") return "bg-violet-500";
   return "bg-orange-500";
+}
+
+function operatorLogTone(level: "info" | "warn" | "error"): TimelineItem["tone"] {
+  if (level === "warn" || level === "error") {
+    return "failed";
+  }
+
+  return "action";
+}
+
+function getOperatorActionMeta(
+  entry: NonNullable<JobDetailsType["operatorActionLogs"]>[number],
+): OperatorActionMeta {
+  const message = entry.message.toLowerCase();
+  const tone = operatorLogTone(entry.level);
+
+  if (message.includes("manual job replay")) {
+    if (message.includes("rejected") || message.includes("failed")) {
+      return {
+        title: "Replay Job",
+        outcomeLabel: message.includes("rejected") ? "Rejected" : "Failed",
+        outcomeClassName: "ui-badge-danger",
+        tone,
+      };
+    }
+
+    return {
+      title: "Replay Job",
+      outcomeLabel: "Queued",
+      outcomeClassName: "ui-badge-success",
+      tone: "action",
+    };
+  }
+
+  if (message.includes("manual job retry")) {
+    if (message.includes("rejected") || message.includes("failed")) {
+      return {
+        title: "Retry Job",
+        outcomeLabel: message.includes("rejected") ? "Rejected" : "Failed",
+        outcomeClassName: "ui-badge-danger",
+        tone,
+      };
+    }
+
+    return {
+      title: "Retry Job",
+      outcomeLabel: "Scheduled",
+      outcomeClassName: "ui-badge-success",
+      tone: "action",
+    };
+  }
+
+  if (message.includes("manual delivery retry cancel")) {
+    if (message.includes("rejected") || message.includes("failed")) {
+      return {
+        title: "Cancel Retry",
+        outcomeLabel: message.includes("rejected") ? "Rejected" : "Failed",
+        outcomeClassName: "ui-badge-danger",
+        tone,
+      };
+    }
+
+    return {
+      title: "Cancel Retry",
+      outcomeLabel: "Applied",
+      outcomeClassName: "bg-orange-100 text-orange-700",
+      tone: "action",
+    };
+  }
+
+  if (message.includes("manual delivery retry")) {
+    if (message.includes("rejected") || message.includes("failed")) {
+      return {
+        title: "Retry Delivery",
+        outcomeLabel: message.includes("rejected") ? "Rejected" : "Failed",
+        outcomeClassName: "ui-badge-danger",
+        tone,
+      };
+    }
+
+    return {
+      title: "Retry Delivery",
+      outcomeLabel: "Scheduled",
+      outcomeClassName: "ui-badge-success",
+      tone: "action",
+    };
+  }
+
+  return {
+    title: "Operator Action",
+    outcomeLabel: entry.level === "warn" || entry.level === "error" ? "Attention" : "Applied",
+    outcomeClassName:
+      entry.level === "warn" || entry.level === "error"
+        ? "ui-badge-danger"
+        : "bg-violet-100 text-violet-700",
+    tone,
+  };
 }
 
 function mapStatusToTimelineTone(status: string): TimelineItem["tone"] {
@@ -164,7 +269,19 @@ function buildTimelineItems(selectedJob: JobDetailsType): TimelineItem[] {
     [],
   );
 
-  return [...statusItems, ...deliveryItems].sort(
+  const operatorItems: TimelineItem[] = (selectedJob.operatorActionLogs || []).map((entry) => {
+    const meta = getOperatorActionMeta(entry);
+
+    return {
+      id: `operator-${entry.id}`,
+      label: meta.title,
+      timestamp: entry.timestamp,
+      message: entry.message,
+      tone: meta.tone,
+    };
+  });
+
+  return [...statusItems, ...deliveryItems, ...operatorItems].sort(
     (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
   );
 }
@@ -200,6 +317,7 @@ export function JobDetails({
   const isRetryingSelectedJob = Boolean(selectedJob && retryingJobId === selectedJob.id);
   const isReplayingSelectedJob = Boolean(selectedJob && replayingJobId === selectedJob.id);
   const timelineItems = selectedJob ? buildTimelineItems(selectedJob) : [];
+  const operatorActionLogs = selectedJob?.operatorActionLogs || [];
   const deliveryAttempts = selectedJob?.deliveryAttempts || [];
   const successfulAttemptsCount = deliveryAttempts.filter((attempt) => attempt.status === "succeeded").length;
   const retryPendingCount = deliveryAttempts.filter((attempt) => attempt.status === "failed_retryable").length;
@@ -411,6 +529,58 @@ export function JobDetails({
             </div>
 
             <div>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Operator Actions</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Manual replay and retry actions recorded for this job.
+                  </p>
+                </div>
+                <span className="ui-badge ui-badge-neutral">{operatorActionLogs.length} action(s)</span>
+              </div>
+
+              {operatorActionLogs.length ? (
+                <div className="space-y-3">
+                  {operatorActionLogs.map((entry) => {
+                    const meta = getOperatorActionMeta(entry);
+
+                    return (
+                      <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm font-semibold text-slate-900">{meta.title}</h4>
+                              <span className={`ui-badge ${meta.outcomeClassName}`}>{meta.outcomeLabel}</span>
+                              <span
+                                className={`ui-badge uppercase ${
+                                  entry.level === "info"
+                                    ? "ui-badge-info"
+                                    : entry.level === "warn"
+                                      ? "ui-badge-warn"
+                                      : "ui-badge-danger"
+                                }`}
+                              >
+                                {entry.level}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-600">{entry.message}</p>
+                          </div>
+
+                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-right">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Recorded</p>
+                            <p className="mt-1 text-sm text-slate-700">{formatDate(entry.timestamp)}</p>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="ui-feedback-empty">No manual operator actions recorded for this job.</p>
+              )}
+            </div>
+
+            <div>
               <h3 className="mb-2 text-sm font-semibold text-slate-700">Lifecycle Timeline</h3>
               {timelineItems.length ? (
                 <ol className="space-y-0">
@@ -437,6 +607,8 @@ export function JobDetails({
                                     ? "ui-badge-info"
                                     : item.tone === "completed"
                                       ? "ui-badge-success"
+                                      : item.tone === "action"
+                                        ? "bg-violet-100 text-violet-700"
                                       : item.tone === "failed"
                                         ? "ui-badge-danger"
                                         : "bg-orange-100 text-orange-700"

@@ -143,6 +143,7 @@ export type JobDetails = {
   result_payload: Record<string, unknown> | null;
   statusHistory: StatusHistoryItem[];
   deliveryAttempts: DeliveryAttempt[];
+  operatorActionLogs?: LogEntry[];
 };
 
 export type DeadLetterJob = {
@@ -733,10 +734,35 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       setJobDetailsError("");
 
       try {
-        const response = await apiRequest<ApiSingleResponse<JobDetails>>(`/jobs/${jobId}`, {
-          apiKey,
-        });
-        setSelectedJob(response.data || null);
+        const [response, operatorLogsResponse] = await Promise.all([
+          apiRequest<ApiSingleResponse<JobDetails>>(`/jobs/${jobId}`, {
+            apiKey,
+          }),
+          apiRequest<ApiListResponse<LogEntry>>(
+            `/logs?${new URLSearchParams({
+              jobId,
+              source: "api",
+              search: "Manual",
+              limit: "100",
+            }).toString()}`,
+            {
+              apiKey,
+            },
+          ),
+        ]);
+
+        const operatorActionLogs = (Array.isArray(operatorLogsResponse.data) ? operatorLogsResponse.data : []).filter(
+          (entry) => entry.message.toLowerCase().startsWith("manual"),
+        );
+
+        setSelectedJob(
+          response.data
+            ? {
+                ...response.data,
+                operatorActionLogs,
+              }
+            : null,
+        );
       } catch (error) {
         setSelectedJob(null);
         setJobDetailsError(error instanceof Error ? error.message : "Failed to load job details.");

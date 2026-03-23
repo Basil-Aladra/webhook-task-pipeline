@@ -12,6 +12,7 @@
     "dev:api": "npm run dev -w @webhook-pipeline/api",
     "dev:worker": "npm run dev -w @webhook-pipeline/worker",
     "build": "npm run build -w @webhook-pipeline/shared && npm run build -w @webhook-pipeline/api && npm run build -w @webhook-pipeline/worker && npm run build -w @webhook-pipeline/dashboard",
+    "demo:seed": "npm run seed:demo -w @webhook-pipeline/api",
     "start:api": "npm run start -w @webhook-pipeline/api",
     "start:worker": "npm run start -w @webhook-pipeline/worker",
     "format": "prettier --write .",

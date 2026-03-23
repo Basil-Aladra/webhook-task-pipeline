@@ -125,6 +125,40 @@ npx ts-node apps/worker/src/main.ts
 
 Run API and worker in separate terminals.
 
+### Seed repeatable demo scenarios
+
+Seed three built-in demo pipelines:
+
+- `demo-success`
+- `demo-retryable-failure`
+- `demo-final-failure`
+
+```bash
+npm run demo:seed
+```
+
+This creates pipelines wired to built-in subscriber endpoints exposed by the API, so you can demo success, retryable failure, and immediate final failure without external webhook receivers.
+
+If you are seeding from a different runtime network location, set:
+
+```bash
+DEMO_SUBSCRIBER_BASE_URL=http://localhost:3000 npm run demo:seed
+```
+
+Suggested demo payload:
+
+```json
+{
+  "payload": {
+    "orderId": "demo-1001",
+    "customerName": "Alice",
+    "amount": 42.5,
+    "status": "new"
+  },
+  "idempotencyKey": "demo-evt-1001"
+}
+```
+
 ## 6. API Reference
 
 Base URL: `http://localhost:3000/api/v1`

@@ -10,6 +10,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "ts-node src/db/migrate.ts",
+    "seed:demo": "ts-node src/db/seed-demo.ts",
     "test:security": "set DATABASE_URL=postgresql://test:test@localhost:5432/test&& ts-node src/security/security.test.ts"
   },
   "dependencies": {
