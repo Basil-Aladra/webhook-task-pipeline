@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PipelineListItem } from "../../hooks/useDashboard";
+import { useToast } from "../Toast/ToastProvider";
 
 type PipelineSecretResult = {
   type: "success" | "error";
@@ -27,7 +28,7 @@ export function PipelineSecretModal({
   onRotateWebhookSecret,
 }: PipelineSecretModalProps): JSX.Element | null {
   const [showSecretValue, setShowSecretValue] = useState(false);
-  const [copyMessage, setCopyMessage] = useState("");
+  const { showToast } = useToast();
 
   const webhookSecret = pipelineSecretResult?.webhookSecret ?? "";
   const actionLabel = pipeline?.hasWebhookSecret ? "Rotate Secret" : "Generate Secret";
@@ -43,11 +44,8 @@ export function PipelineSecretModal({
   useEffect(() => {
     if (!open) {
       setShowSecretValue(false);
-      setCopyMessage("");
       return;
     }
-
-    setCopyMessage("");
   }, [open, webhookSecret]);
 
   if (!open || !pipeline) {
@@ -61,10 +59,15 @@ export function PipelineSecretModal({
 
     try {
       await navigator.clipboard.writeText(webhookSecret);
-      setCopyMessage("Copied.");
-      window.setTimeout(() => setCopyMessage(""), 2000);
+      showToast({
+        type: "success",
+        message: "Webhook secret copied.",
+      });
     } catch {
-      setCopyMessage("Copy failed.");
+      showToast({
+        type: "error",
+        message: "Failed to copy webhook secret.",
+      });
     }
   };
 
@@ -137,8 +140,6 @@ export function PipelineSecretModal({
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-800">
               {showSecretValue ? webhookSecret : maskedSecret}
             </div>
-
-            {copyMessage && <p className="mt-2 text-xs text-slate-500">{copyMessage}</p>}
           </div>
         )}
 

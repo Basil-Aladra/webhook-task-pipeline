@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { API_BASE } from "../../api/client";
+import { useToast } from "../Toast/ToastProvider";
 
 type SettingsPageProps = {
   apiKey: string;
@@ -73,9 +74,9 @@ export function SettingsPage({
   workerHealthError,
 }: SettingsPageProps): JSX.Element {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
-  const [copyFeedback, setCopyFeedback] = useState<string>("");
   const [actionFeedback, setActionFeedback] = useState<string>("");
   const [actionFeedbackType, setActionFeedbackType] = useState<"success" | "info">("info");
+  const { showToast } = useToast();
 
   const envLabel = useMemo(() => environmentLabel(), []);
 
@@ -83,17 +84,22 @@ export function SettingsPage({
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(apiKey);
-        setCopyFeedback("API key copied.");
+        showToast({
+          type: "success",
+          message: "API key copied.",
+        });
       } else {
-        setCopyFeedback("Clipboard API not available in this browser.");
+        showToast({
+          type: "info",
+          message: "Clipboard API not available in this browser.",
+        });
       }
     } catch {
-      setCopyFeedback("Failed to copy API key.");
+      showToast({
+        type: "error",
+        message: "Failed to copy API key.",
+      });
     }
-
-    window.setTimeout(() => {
-      setCopyFeedback("");
-    }, 2000);
   };
 
   const handleResetDashboardState = () => {
@@ -162,12 +168,6 @@ export function SettingsPage({
                   Copy
                 </button>
               </div>
-
-              {copyFeedback && (
-                <div className={copyFeedback.includes("copied") ? "ui-feedback-success" : "ui-feedback-error"}>
-                  {copyFeedback}
-                </div>
-              )}
             </form>
           </section>
 

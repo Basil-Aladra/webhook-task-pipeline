@@ -12,6 +12,7 @@ import { PipelineSecretModal } from "./components/Pipelines/PipelineSecretModal"
 import { PipelinesTable } from "./components/Pipelines/PipelinesTable";
 import { SettingsPage } from "./components/Settings/SettingsPage";
 import { StatsSection } from "./components/Stats/StatsSection";
+import { ToastProvider } from "./components/Toast/ToastProvider";
 import { SendWebhookForm } from "./components/Webhooks/SendWebhookForm";
 import { useDashboard } from "./hooks/useDashboard";
 
@@ -100,18 +101,19 @@ export default function App(): JSX.Element {
   const showOverviewDataStates = currentPage !== "logs" && currentPage !== "settings";
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 lg:flex">
-      <Header
-        apiKey={dashboard.apiKey}
-        onApiKeyChange={dashboard.setApiKey}
-        currentPage={currentPage}
-        onNavigate={navigateTo}
-        autoRefreshEnabled={dashboard.autoRefreshEnabled}
-        refreshIntervalMs={dashboard.refreshIntervalMs}
-      />
+    <ToastProvider>
+      <div className="min-h-screen bg-slate-100 text-slate-900 lg:flex">
+        <Header
+          apiKey={dashboard.apiKey}
+          onApiKeyChange={dashboard.setApiKey}
+          currentPage={currentPage}
+          onNavigate={navigateTo}
+          autoRefreshEnabled={dashboard.autoRefreshEnabled}
+          refreshIntervalMs={dashboard.refreshIntervalMs}
+        />
 
-      <div className="min-w-0 flex-1">
-        <main className="space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="min-w-0 flex-1">
+          <main className="space-y-8 px-4 py-6 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 px-4 py-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
@@ -345,40 +347,41 @@ export default function App(): JSX.Element {
           {showOverviewDataStates && dashboard.overviewError && (
             <div className="ui-feedback-error">{dashboard.overviewError}</div>
           )}
-        </main>
+          </main>
+        </div>
+
+        <CreatePipelineModal
+          open={dashboard.showCreatePipelineModal}
+          creatingPipeline={dashboard.creatingPipeline}
+          createPipelineError={dashboard.createPipelineError}
+          createPipelineName={dashboard.createPipelineName}
+          setCreatePipelineName={dashboard.setCreatePipelineName}
+          createPipelineWebhookPath={dashboard.createPipelineWebhookPath}
+          setCreatePipelineWebhookPath={dashboard.setCreatePipelineWebhookPath}
+          createPipelineDescription={dashboard.createPipelineDescription}
+          setCreatePipelineDescription={dashboard.setCreatePipelineDescription}
+          createPipelineStatus={dashboard.createPipelineStatus}
+          setCreatePipelineStatus={dashboard.setCreatePipelineStatus}
+          createPipelineActionType={dashboard.createPipelineActionType}
+          setCreatePipelineActionType={dashboard.setCreatePipelineActionType}
+          createPipelineActionConfigText={dashboard.createPipelineActionConfigText}
+          setCreatePipelineActionConfigText={dashboard.setCreatePipelineActionConfigText}
+          createPipelineSubscriberUrl={dashboard.createPipelineSubscriberUrl}
+          setCreatePipelineSubscriberUrl={dashboard.setCreatePipelineSubscriberUrl}
+          onCancel={dashboard.handleCloseCreatePipelineModal}
+          onCreate={dashboard.handleCreatePipeline}
+        />
+
+        <PipelineSecretModal
+          open={dashboard.showPipelineSecretModal}
+          pipeline={dashboard.selectedSecretPipeline}
+          rotatingWebhookSecret={dashboard.rotatingWebhookSecret}
+          pipelineSecretError={dashboard.pipelineSecretError}
+          pipelineSecretResult={dashboard.pipelineSecretResult}
+          onClose={dashboard.handleClosePipelineSecretModal}
+          onRotateWebhookSecret={dashboard.handleRotateWebhookSecret}
+        />
       </div>
-
-      <CreatePipelineModal
-        open={dashboard.showCreatePipelineModal}
-        creatingPipeline={dashboard.creatingPipeline}
-        createPipelineError={dashboard.createPipelineError}
-        createPipelineName={dashboard.createPipelineName}
-        setCreatePipelineName={dashboard.setCreatePipelineName}
-        createPipelineWebhookPath={dashboard.createPipelineWebhookPath}
-        setCreatePipelineWebhookPath={dashboard.setCreatePipelineWebhookPath}
-        createPipelineDescription={dashboard.createPipelineDescription}
-        setCreatePipelineDescription={dashboard.setCreatePipelineDescription}
-        createPipelineStatus={dashboard.createPipelineStatus}
-        setCreatePipelineStatus={dashboard.setCreatePipelineStatus}
-        createPipelineActionType={dashboard.createPipelineActionType}
-        setCreatePipelineActionType={dashboard.setCreatePipelineActionType}
-        createPipelineActionConfigText={dashboard.createPipelineActionConfigText}
-        setCreatePipelineActionConfigText={dashboard.setCreatePipelineActionConfigText}
-        createPipelineSubscriberUrl={dashboard.createPipelineSubscriberUrl}
-        setCreatePipelineSubscriberUrl={dashboard.setCreatePipelineSubscriberUrl}
-        onCancel={dashboard.handleCloseCreatePipelineModal}
-        onCreate={dashboard.handleCreatePipeline}
-      />
-
-      <PipelineSecretModal
-        open={dashboard.showPipelineSecretModal}
-        pipeline={dashboard.selectedSecretPipeline}
-        rotatingWebhookSecret={dashboard.rotatingWebhookSecret}
-        pipelineSecretError={dashboard.pipelineSecretError}
-        pipelineSecretResult={dashboard.pipelineSecretResult}
-        onClose={dashboard.handleClosePipelineSecretModal}
-        onRotateWebhookSecret={dashboard.handleRotateWebhookSecret}
-      />
-    </div>
+    </ToastProvider>
   );
 }
