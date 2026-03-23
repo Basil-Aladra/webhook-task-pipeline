@@ -1,4 +1,6 @@
+import { useEffect, useRef } from "react";
 import { PipelineListItem } from "../../hooks/useDashboard";
+import { useToast } from "../Toast/ToastProvider";
 
 type SendResult = {
   type: "success" | "error";
@@ -30,6 +32,26 @@ export function SendWebhookForm({
   sendResult,
   onSendWebhook,
 }: SendWebhookFormProps): JSX.Element {
+  const { showToast } = useToast();
+  const lastToastKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!sendResult) {
+      return;
+    }
+
+    const nextToastKey = `${sendResult.type}:${sendResult.message}`;
+    if (lastToastKeyRef.current === nextToastKey) {
+      return;
+    }
+
+    lastToastKeyRef.current = nextToastKey;
+    showToast({
+      type: sendResult.type === "success" ? "success" : "error",
+      message: sendResult.type === "error" ? `Error: ${sendResult.message}` : sendResult.message,
+    });
+  }, [sendResult, showToast]);
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
@@ -92,18 +114,6 @@ export function SendWebhookForm({
             {sendingWebhook ? "Sending..." : "Send Webhook"}
           </button>
         </div>
-
-        {sendResult?.type === "success" && (
-          <div className="ui-feedback-success">
-            {sendResult.message}
-          </div>
-        )}
-
-        {sendResult?.type === "error" && (
-          <div className="ui-feedback-error">
-            Error: {sendResult.message}
-          </div>
-        )}
       </div>
     </section>
   );
