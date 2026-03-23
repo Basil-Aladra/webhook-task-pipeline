@@ -1,10 +1,12 @@
 type HeaderProps = {
   apiKey: string;
   onApiKeyChange: (value: string) => void;
-  currentPage: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs";
+  currentPage: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
   onNavigate: (
-    page: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs",
+    page: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings",
   ) => void;
+  autoRefreshEnabled: boolean;
+  refreshIntervalMs: number;
 };
 
 function navButtonClass(active: boolean): string {
@@ -20,6 +22,8 @@ export function Header({
   onApiKeyChange,
   currentPage,
   onNavigate,
+  autoRefreshEnabled,
+  refreshIntervalMs,
 }: HeaderProps): JSX.Element {
   return (
     <aside className="w-full border-b border-slate-700 bg-slate-900 text-white lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-r-slate-700">
@@ -65,6 +69,13 @@ export function Header({
           >
             Logs
           </button>
+          <button
+            type="button"
+            onClick={() => onNavigate("settings")}
+            className={navButtonClass(currentPage === "settings")}
+          >
+            Settings
+          </button>
         </nav>
 
         <form
@@ -83,7 +94,9 @@ export function Header({
             autoComplete="off"
             className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-400 focus:border-slate-400"
           />
-          <p className="mt-2 text-xs text-slate-400">Auto-refresh every 10s</p>
+          <p className="mt-2 text-xs text-slate-400">
+            {autoRefreshEnabled ? `Auto-refresh every ${refreshIntervalMs / 1000}s` : "Auto-refresh disabled"}
+          </p>
         </form>
       </div>
     </aside>

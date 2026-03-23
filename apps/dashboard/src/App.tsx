@@ -8,17 +8,19 @@ import { Header } from "./components/Layout/Header";
 import { LogsPage } from "./components/Logs/LogsPage";
 import { CreatePipelineModal } from "./components/Pipelines/CreatePipelineModal";
 import { PipelinesTable } from "./components/Pipelines/PipelinesTable";
+import { SettingsPage } from "./components/Settings/SettingsPage";
 import { StatsSection } from "./components/Stats/StatsSection";
 import { SendWebhookForm } from "./components/Webhooks/SendWebhookForm";
 import { useDashboard } from "./hooks/useDashboard";
 
-type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs";
+type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
 
 function getPageFromHash(hash: string): DashboardPage {
   if (hash === "#/pipelines") return "pipelines";
   if (hash === "#/jobs") return "jobs";
   if (hash === "#/dead-letters") return "dead-letters";
   if (hash === "#/logs") return "logs";
+  if (hash === "#/settings") return "settings";
   return "overview";
 }
 
@@ -27,6 +29,7 @@ function getHashForPage(page: DashboardPage): string {
   if (page === "jobs") return "#/jobs";
   if (page === "dead-letters") return "#/dead-letters";
   if (page === "logs") return "#/logs";
+  if (page === "settings") return "#/settings";
   return "#/";
 }
 
@@ -81,14 +84,18 @@ export default function App(): JSX.Element {
           ? "Jobs"
           : currentPage === "dead-letters"
             ? "Dead Letters"
-            : "Logs & Observability";
+            : currentPage === "logs"
+              ? "Logs & Observability"
+              : "Settings";
   const pageViewLabel =
     currentPage === "overview"
       ? "Operations View"
       : currentPage === "logs"
         ? "Observability View"
-        : "Management View";
-  const showOverviewDataStates = currentPage !== "logs";
+        : currentPage === "settings"
+          ? "Configuration View"
+          : "Management View";
+  const showOverviewDataStates = currentPage !== "logs" && currentPage !== "settings";
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 lg:flex">
@@ -97,6 +104,8 @@ export default function App(): JSX.Element {
         onApiKeyChange={dashboard.setApiKey}
         currentPage={currentPage}
         onNavigate={navigateTo}
+        autoRefreshEnabled={dashboard.autoRefreshEnabled}
+        refreshIntervalMs={dashboard.refreshIntervalMs}
       />
 
       <div className="min-w-0 flex-1">
@@ -109,7 +118,11 @@ export default function App(): JSX.Element {
               </div>
               <div className="flex items-center gap-2">
                 <span className="ui-badge ui-badge-neutral">{pageViewLabel}</span>
-                <span className="ui-badge ui-badge-info">Auto-refresh 10s</span>
+                <span className={`ui-badge ${dashboard.autoRefreshEnabled ? "ui-badge-info" : "ui-badge-neutral"}`}>
+                  {dashboard.autoRefreshEnabled
+                    ? `Auto-refresh ${dashboard.refreshIntervalMs / 1000}s`
+                    : "Manual refresh"}
+                </span>
               </div>
             </div>
           </div>
@@ -243,20 +256,37 @@ export default function App(): JSX.Element {
           {currentPage === "logs" && (
             <LogsPage
               logs={dashboard.filteredLogs}
-            loadingLogs={dashboard.loadingLogs}
-            logsError={dashboard.logsError}
-            logsLevelFilter={dashboard.logsLevelFilter}
-            setLogsLevelFilter={dashboard.setLogsLevelFilter}
-            logsSourceFilter={dashboard.logsSourceFilter}
-            setLogsSourceFilter={dashboard.setLogsSourceFilter}
-            logsSearchText={dashboard.logsSearchText}
-            setLogsSearchText={dashboard.setLogsSearchText}
-            onRefresh={dashboard.refreshLogs}
-            onClearFilters={() => {
-              dashboard.setLogsLevelFilter("");
-              dashboard.setLogsSourceFilter("");
-              dashboard.setLogsSearchText("");
-            }}
+              loadingLogs={dashboard.loadingLogs}
+              logsError={dashboard.logsError}
+              logsLevelFilter={dashboard.logsLevelFilter}
+              setLogsLevelFilter={dashboard.setLogsLevelFilter}
+              logsSourceFilter={dashboard.logsSourceFilter}
+              setLogsSourceFilter={dashboard.setLogsSourceFilter}
+              logsSearchText={dashboard.logsSearchText}
+              setLogsSearchText={dashboard.setLogsSearchText}
+              onRefresh={dashboard.refreshLogs}
+              onClearFilters={() => {
+                dashboard.setLogsLevelFilter("");
+                dashboard.setLogsSourceFilter("");
+                dashboard.setLogsSearchText("");
+              }}
+            />
+          )}
+
+          {currentPage === "settings" && (
+            <SettingsPage
+              apiKey={dashboard.apiKey}
+              onApiKeyChange={dashboard.setApiKey}
+              autoRefreshEnabled={dashboard.autoRefreshEnabled}
+              onAutoRefreshEnabledChange={dashboard.setAutoRefreshEnabled}
+              refreshIntervalMs={dashboard.refreshIntervalMs}
+              onRefreshIntervalChange={dashboard.setRefreshIntervalMs}
+              retryMaxAttempts={dashboard.retryMaxAttempts}
+              onRetryMaxAttemptsChange={dashboard.setRetryMaxAttempts}
+              retryDelaySeconds={Math.floor(dashboard.retryDelayMs / 1000)}
+              onRetryDelayChange={(value) => dashboard.setRetryDelayMs(Math.max(0, value) * 1000)}
+              onResetDashboardState={dashboard.resetDashboardSettings}
+              onClearLocalSettings={dashboard.clearLocalSettings}
             />
           )}
 

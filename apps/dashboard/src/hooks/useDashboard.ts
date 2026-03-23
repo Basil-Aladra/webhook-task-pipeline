@@ -11,7 +11,7 @@ type JobStatus =
   | "failed_delivery";
 type ActionType = "transform" | "enrich" | "filter";
 type CreatePipelineStatus = "paused" | "active";
-export type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs";
+export type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
 export type LogLevel = "info" | "warn" | "error";
 export type LogSource = "api" | "worker" | "delivery" | "system";
 
@@ -143,6 +143,32 @@ const DEFAULT_WEBHOOK_PAYLOAD = `{
   "amount": 99.99
 }`;
 
+const STORAGE_KEYS = {
+  apiKey: "dashboardApiKey",
+  autoRefreshEnabled: "dashboardAutoRefreshEnabled",
+  refreshIntervalMs: "dashboardRefreshIntervalMs",
+  retryMaxAttempts: "dashboardRetryMaxAttempts",
+  retryDelayMs: "dashboardRetryDelayMs",
+} as const;
+
+const DEFAULT_AUTO_REFRESH_ENABLED = true;
+const DEFAULT_REFRESH_INTERVAL_MS = 10000;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY_MS = 2000;
+
+function getStoredValue<T>(key: string, fallback: T, parser: (value: string) => T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) {
+      return fallback;
+    }
+
+    return parser(stored);
+  } catch {
+    return fallback;
+  }
+}
+
 function mapStatusTransitionLevel(toStatus: string): LogLevel {
   if (toStatus === "failed_processing" || toStatus === "failed_delivery") {
     return "error";
@@ -173,7 +199,7 @@ function mapActorToSource(actor: string): LogSource {
 export function useDashboard(activePage: DashboardPage = "overview") {
   const [apiKey, setApiKey] = useState<string>(() => {
     try {
-      return localStorage.getItem("dashboardApiKey") || "";
+      return localStorage.getItem(STORAGE_KEYS.apiKey) || "";
     } catch {
       return "";
     }
@@ -181,6 +207,27 @@ export function useDashboard(activePage: DashboardPage = "overview") {
 
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
   const [metrics, setMetrics] = useState<Metrics>(DEFAULT_METRICS);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(() =>
+    getStoredValue(STORAGE_KEYS.autoRefreshEnabled, DEFAULT_AUTO_REFRESH_ENABLED, (value) => value === "true"),
+  );
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState<number>(() =>
+    getStoredValue(STORAGE_KEYS.refreshIntervalMs, DEFAULT_REFRESH_INTERVAL_MS, (value) => {
+      const parsed = Number(value);
+      return [5000, 10000, 30000].includes(parsed) ? parsed : DEFAULT_REFRESH_INTERVAL_MS;
+    }),
+  );
+  const [retryMaxAttempts, setRetryMaxAttempts] = useState<number>(() =>
+    getStoredValue(STORAGE_KEYS.retryMaxAttempts, DEFAULT_RETRY_MAX_ATTEMPTS, (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? Math.max(0, Math.min(20, parsed)) : DEFAULT_RETRY_MAX_ATTEMPTS;
+    }),
+  );
+  const [retryDelayMs, setRetryDelayMs] = useState<number>(() =>
+    getStoredValue(STORAGE_KEYS.retryDelayMs, DEFAULT_RETRY_DELAY_MS, (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : DEFAULT_RETRY_DELAY_MS;
+    }),
+  );
   const [pipelines, setPipelines] = useState<PipelineListItem[]>([]);
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [deadLetterJobs, setDeadLetterJobs] = useState<DeadLetterJob[]>([]);
@@ -721,14 +768,52 @@ export function useDashboard(activePage: DashboardPage = "overview") {
 
   useEffect(() => {
     try {
-      localStorage.setItem("dashboardApiKey", apiKey);
+      localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
     } catch {
       // localStorage can be blocked in some contexts.
     }
   }, [apiKey]);
 
   useEffect(() => {
-    if (activePage !== "logs") {
+    try {
+      localStorage.setItem(STORAGE_KEYS.autoRefreshEnabled, String(autoRefreshEnabled));
+      localStorage.setItem(STORAGE_KEYS.refreshIntervalMs, String(refreshIntervalMs));
+      localStorage.setItem(STORAGE_KEYS.retryMaxAttempts, String(retryMaxAttempts));
+      localStorage.setItem(STORAGE_KEYS.retryDelayMs, String(retryDelayMs));
+    } catch {
+      // localStorage can be blocked in some contexts.
+    }
+  }, [autoRefreshEnabled, refreshIntervalMs, retryDelayMs, retryMaxAttempts]);
+
+  const resetDashboardSettings = useCallback(() => {
+    setApiKey("");
+    setAutoRefreshEnabled(DEFAULT_AUTO_REFRESH_ENABLED);
+    setRefreshIntervalMs(DEFAULT_REFRESH_INTERVAL_MS);
+    setRetryMaxAttempts(DEFAULT_RETRY_MAX_ATTEMPTS);
+    setRetryDelayMs(DEFAULT_RETRY_DELAY_MS);
+    setJobsStatusFilter("");
+    setAppliedJobsStatusFilter("");
+    setSelectedJobId("");
+    setSelectedPipelineId("");
+    setSendResult(null);
+    setRetryJobResult(null);
+    setCreatePipelineResult(null);
+    setOverviewError("");
+    setLogsError("");
+  }, []);
+
+  const clearLocalSettings = useCallback(() => {
+    try {
+      Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+    } catch {
+      // localStorage can be blocked in some contexts.
+    }
+
+    resetDashboardSettings();
+  }, [resetDashboardSettings]);
+
+  useEffect(() => {
+    if (activePage !== "logs" && activePage !== "settings") {
       void loadOverview();
     }
   }, [activePage, loadOverview]);
@@ -750,26 +835,43 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   }, [selectedJobId, loadJobDetails]);
 
   useEffect(() => {
+    if (!autoRefreshEnabled) {
+      return;
+    }
+
     const intervalId = setInterval(() => {
       if (activePage === "logs") {
         void loadLogs(true);
         return;
       }
 
-      void loadOverview(true);
+      if (activePage !== "settings") {
+        void loadOverview(true);
+      }
+
       if (selectedJobId && activePage === "jobs") {
         void loadJobDetails(selectedJobId, true);
       }
-    }, 10000);
+    }, refreshIntervalMs);
 
     return () => clearInterval(intervalId);
-  }, [activePage, loadLogs, loadOverview, loadJobDetails, selectedJobId]);
+  }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, refreshIntervalMs, selectedJobId]);
 
   return {
     apiKey,
     setApiKey,
     stats,
     metrics,
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    refreshIntervalMs,
+    setRefreshIntervalMs,
+    retryMaxAttempts,
+    setRetryMaxAttempts,
+    retryDelayMs,
+    setRetryDelayMs,
+    resetDashboardSettings,
+    clearLocalSettings,
     pipelines,
     jobs,
     deadLetterJobs,

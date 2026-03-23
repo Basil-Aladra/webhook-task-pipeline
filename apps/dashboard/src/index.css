@@ -15,6 +15,10 @@
     @apply rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50;
   }
 
+  .ui-btn-danger {
+    @apply rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50;
+  }
+
   .ui-feedback-info {
     @apply rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600;
   }
