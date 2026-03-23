@@ -161,6 +161,26 @@ export type DeadLetterJobsResult = {
   total: number;
 };
 
+export class JobsRepositoryError extends Error {
+  statusCode: number;
+  code: string;
+  details?: unknown;
+
+  constructor(statusCode: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'JobsRepositoryError';
+    this.statusCode = statusCode;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export type RetryJobResult = {
+  jobId: string;
+  status: JobStatus;
+  message: string;
+};
+
 function toIsoString(value: TimestampValue | null): string | null {
   if (value === null) {
     return null;
@@ -478,4 +498,145 @@ export async function getDeadLetterJobs(db: Queryable = pool): Promise<DeadLette
     items,
     total: items.length,
   };
+}
+
+// Manually retries a failed job using the worker's existing queue/retry flow.
+export async function retryJob(jobId: string): Promise<RetryJobResult | null> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const jobResult = await client.query<{ id: string; status: JobStatus }>(
+      `
+        SELECT id, status
+        FROM jobs
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [jobId],
+    );
+
+    if (jobResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const currentJob = jobResult.rows[0];
+    const retryReason = 'Manual retry requested from dashboard.';
+
+    if (currentJob.status === 'failed_processing') {
+      await client.query(
+        `
+          UPDATE jobs
+          SET
+            status = 'queued',
+            available_at = now(),
+            locked_at = NULL,
+            locked_by = NULL,
+            lock_expires_at = NULL,
+            started_at = NULL,
+            completed_at = NULL,
+            last_error = NULL,
+            updated_at = now()
+          WHERE id = $1
+        `,
+        [jobId],
+      );
+
+      await client.query(
+        `
+          INSERT INTO job_status_history (
+            job_id,
+            from_status,
+            to_status,
+            reason,
+            actor,
+            changed_at
+          )
+          VALUES ($1, $2, $3, $4, $5, now())
+        `,
+        [jobId, 'failed_processing', 'queued', retryReason, 'api'],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        jobId,
+        status: 'queued',
+        message: 'Job re-queued for processing retry.',
+      };
+    }
+
+    if (currentJob.status === 'failed_delivery') {
+      const rearmedAttempts = await client.query<{ id: number }>(
+        `
+          UPDATE delivery_attempts
+          SET
+            status = 'failed_retryable',
+            next_retry_at = now()
+          WHERE job_id = $1
+            AND status = 'failed_final'
+          RETURNING id
+        `,
+        [jobId],
+      );
+
+      if (rearmedAttempts.rowCount === 0) {
+        throw new JobsRepositoryError(
+          409,
+          'JOB_NOT_RETRYABLE',
+          'This failed delivery job has no final delivery attempts to retry.',
+        );
+      }
+
+      await client.query(
+        `
+          UPDATE jobs
+          SET
+            status = 'processed',
+            completed_at = NULL,
+            last_error = NULL,
+            updated_at = now()
+          WHERE id = $1
+        `,
+        [jobId],
+      );
+
+      await client.query(
+        `
+          INSERT INTO job_status_history (
+            job_id,
+            from_status,
+            to_status,
+            reason,
+            actor,
+            changed_at
+          )
+          VALUES ($1, $2, $3, $4, $5, now())
+        `,
+        [jobId, 'failed_delivery', 'processed', retryReason, 'api'],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        jobId,
+        status: 'processed',
+        message: `Delivery retry scheduled for ${rearmedAttempts.rowCount} attempt(s).`,
+      };
+    }
+
+    throw new JobsRepositoryError(
+      409,
+      'JOB_NOT_RETRYABLE',
+      'Only failed jobs can be retried.',
+      { status: currentJob.status },
+    );
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

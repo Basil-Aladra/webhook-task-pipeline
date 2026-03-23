@@ -113,6 +113,59 @@ export async function fetchNextJob(db: Queryable = pool): Promise<Job | null> {
   return mapDatabaseJob(result.rows[0]);
 }
 
+// Re-queues jobs that were locked by a worker but never completed (for example after a crash).
+// This keeps the queue moving instead of leaving jobs stuck in "processing" forever.
+export async function recoverExpiredProcessingJobs(
+  db: Queryable = pool,
+): Promise<string[]> {
+  const query = `
+    WITH expired_jobs AS (
+      SELECT id
+      FROM jobs
+      WHERE status = $1
+        AND lock_expires_at IS NOT NULL
+        AND lock_expires_at < now()
+      FOR UPDATE SKIP LOCKED
+    ),
+    updated_jobs AS (
+      UPDATE jobs j
+      SET
+        status = $2,
+        locked_at = NULL,
+        locked_by = NULL,
+        lock_expires_at = NULL,
+        started_at = NULL,
+        available_at = now(),
+        updated_at = now()
+      FROM expired_jobs e
+      WHERE j.id = e.id
+      RETURNING j.id
+    )
+    SELECT id
+    FROM updated_jobs
+  `;
+
+  type RecoveredJobRow = { id: string };
+  const result = await db.query<RecoveredJobRow>(query, [
+    JobStatus.Processing,
+    JobStatus.Queued,
+  ]);
+
+  const recoveredJobIds = result.rows.map((row) => row.id);
+  for (const jobId of recoveredJobIds) {
+    await addJobStatusHistory(
+      jobId,
+      JobStatus.Processing,
+      JobStatus.Queued,
+      'Worker lock expired; job re-queued for retry.',
+      'worker-recovery',
+      db,
+    );
+  }
+
+  return recoveredJobIds;
+}
+
 // Updates job status and optional fields such as result payload or error details.
 export async function updateJobStatus(
   jobId: string,

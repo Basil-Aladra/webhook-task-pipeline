@@ -10,6 +10,7 @@ import {
   computeDeliveryOutcomeForJob,
   fetchNextJob,
   getJobById,
+  recoverExpiredProcessingJobs,
   updateJobStatus,
 } from '../jobs/jobs.repository';
 import { JobStatus } from '../jobs/jobs.types';
@@ -124,6 +125,15 @@ async function pollDeliveryRetries(): Promise<boolean> {
 
 // Polls once: tries to reserve and process exactly one queued job.
 export async function poll(): Promise<void> {
+  // Recover stale in-progress jobs first so they can be retried by any worker.
+  const recoveredJobIds = await recoverExpiredProcessingJobs();
+  if (recoveredJobIds.length > 0) {
+    logger.warn('Recovered expired processing jobs', {
+      recoveredCount: recoveredJobIds.length,
+      jobIds: recoveredJobIds,
+    });
+  }
+
   // 1) Retry due failed delivery attempts first.
   const didRetry = await pollDeliveryRetries();
   if (didRetry) {

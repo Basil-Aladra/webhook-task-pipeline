@@ -1,7 +1,9 @@
 # Webhook-Driven Task Processing Pipeline
+
 A TypeScript monorepo that ingests webhooks, queues jobs in PostgreSQL, processes them asynchronously, and delivers results to subscriber URLs with retry tracking.
 
 ## 1. Project Title + One-Line Description
+
 **Webhook-Driven Task Processing Pipeline**: a TypeScript monorepo that ingests webhooks, queues jobs in PostgreSQL, processes them asynchronously, and delivers results with retry tracking.
 
 ## 2. Architecture Overview
@@ -38,12 +40,14 @@ Subscriber URLs
 ```
 
 ### Components
+
 - `API Service`: Pipeline management, webhook ingestion, job tracking APIs.
 - `PostgreSQL`: Source of truth for pipelines, jobs, status history, and delivery attempts.
 - `Worker Service`: Background processor and delivery executor.
 - `GitHub Actions`: CI checks (typecheck, build, docker build).
 
 ## 3. Tech Stack
+
 - TypeScript (Node.js 20)
 - Express.js
 - PostgreSQL (`pg`)
@@ -86,11 +90,13 @@ Subscriber URLs
 ## 5. Getting Started
 
 ### Prerequisites
+
 - Docker Desktop (or Docker Engine + Compose)
 - Node.js 20+
 - npm
 
 ### Clone and setup
+
 ```bash
 git clone <your-repo-url>
 cd finalprojectfts
@@ -98,15 +104,18 @@ cp .env.example .env
 ```
 
 ### Run with Docker (recommended)
+
 ```bash
 docker compose up --build
 ```
 
 Services:
+
 - API: `http://localhost:3000`
 - Postgres: `localhost:5432`
 
 ### Run locally (development)
+
 ```bash
 npm install
 npm run migrate -w @webhook-pipeline/api
@@ -121,6 +130,7 @@ Run API and worker in separate terminals.
 Base URL: `http://localhost:3000/api/v1`
 
 ### Pipelines
+
 - `POST /pipelines`
 - `GET /pipelines`
 - `GET /pipelines/:pipelineId`
@@ -130,13 +140,16 @@ Base URL: `http://localhost:3000/api/v1`
 - `DELETE /pipelines/:pipelineId` (soft delete/archive)
 
 ### Webhooks
+
 - `POST /webhooks/:webhookPath`
 
 ### Jobs
+
 - `GET /jobs`
 - `GET /jobs/:jobId`
 
 ### Example: Create pipeline
+
 ```bash
 curl -X POST http://localhost:3000/api/v1/pipelines \
   -H "Content-Type: application/json" \
@@ -162,6 +175,7 @@ curl -X POST http://localhost:3000/api/v1/pipelines \
 ```
 
 ### Example: Ingest webhook
+
 ```bash
 curl -X POST http://localhost:3000/api/v1/webhooks/demo-orders \
   -H "Content-Type: application/json" \
@@ -176,6 +190,7 @@ curl -X POST http://localhost:3000/api/v1/webhooks/demo-orders \
 ```
 
 Example response:
+
 ```json
 {
   "data": {
@@ -187,11 +202,13 @@ Example response:
 ```
 
 ### Example: List jobs
+
 ```bash
 curl "http://localhost:3000/api/v1/jobs?page=1&limit=20&status=queued"
 ```
 
 Example response:
+
 ```json
 {
   "data": [
@@ -216,6 +233,7 @@ Example response:
 ```
 
 ### Example: Job details
+
 ```bash
 curl http://localhost:3000/api/v1/jobs/9e3183f5-9ef5-4980-b3c9-ef8cfcb7f125
 ```
@@ -237,6 +255,7 @@ Returns job fields + `statusHistory` + `deliveryAttempts`.
 ## 8. Job Lifecycle
 
 Status flow:
+
 ```text
 queued -> processing -> processed -> completed
                            \-> failed_processing
@@ -244,6 +263,7 @@ queued -> processing -> processed -> completed
 ```
 
 ### Status meanings
+
 - `queued`: job created by webhook ingestion, waiting for worker.
 - `processing`: worker reserved the job and is running processors.
 - `processed`: processors succeeded; result is ready for delivery.
@@ -267,18 +287,23 @@ If any subscriber reaches `failed_final`, job becomes `failed_delivery`.
 ## 10. Design Decisions
 
 ### Why async processing (not synchronous webhook handling)?
+
 Webhook senders should get fast acknowledgements. Heavy work in the request cycle causes timeouts and poor reliability. Returning `202` quickly keeps ingestion robust.
 
 ### Why PostgreSQL as queue (instead of Redis/RabbitMQ)?
+
 For this project scope, PostgreSQL keeps architecture simple: one datastore, transactional consistency, fewer moving parts.
 
 ### Why `FOR UPDATE SKIP LOCKED`?
+
 It allows multiple workers to poll safely without claiming the same job, while keeping locking logic inside the database.
 
 ### Why soft delete for pipelines?
+
 Archiving preserves audit/history and avoids breaking existing job records and references.
 
 ### Why modular monorepo?
+
 `apps/api`, `apps/worker`, and shared package structure keeps responsibilities clear while simplifying dependency management and CI.
 
 ## 11. CI/CD
@@ -286,6 +311,7 @@ Archiving preserves audit/history and avoids breaking existing job records and r
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
 Pipeline stages:
+
 1. `lint-and-typecheck`
    - install dependencies
    - typecheck API and worker
@@ -305,3 +331,5 @@ This ensures code quality and deployment readiness on every push/PR to `main`.
 - Multiple worker replicas and horizontal scaling tests
 - Dead letter queue tooling and replay flow
 - Automated retry worker loop for `failed_retryable` deliveries
+
+## API KEY -> wpk_95664f096aeb7c0b23cd03fb388a6278
