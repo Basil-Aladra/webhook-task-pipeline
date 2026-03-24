@@ -1,9 +1,9 @@
+# Webhook-Driven Task Processing Pipeline
+
 ![CI](https://img.shields.io/badge/CI-passing-brightgreen)
 ![Node.js](https://img.shields.io/badge/Node.js-22-green)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
-
-# Webhook-Driven Task Processing Pipeline
 
 A TypeScript monorepo that ingests webhooks, queues jobs in PostgreSQL, processes them asynchronously, and delivers results to subscriber URLs with retry tracking.
 
