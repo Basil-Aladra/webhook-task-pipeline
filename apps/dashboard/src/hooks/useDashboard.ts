@@ -11,7 +11,7 @@ type JobStatus =
   | "failed_delivery";
 type ActionType = "validate" | "transform" | "enrich" | "filter";
 type CreatePipelineStatus = "paused" | "active";
-export type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
+export type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "notifications" | "settings";
 export type LogLevel = "info" | "warn" | "error";
 export type LogSource = "api" | "worker" | "delivery" | "system";
 
@@ -162,6 +162,7 @@ export type LogEntry = {
   jobId: string | null;
   pipelineId: string | null;
   correlationId: string | null;
+  context?: Record<string, unknown> | null;
 };
 
 type SendResult = {
@@ -210,12 +211,29 @@ const STORAGE_KEYS = {
   refreshIntervalMs: "dashboardRefreshIntervalMs",
   retryMaxAttempts: "dashboardRetryMaxAttempts",
   retryDelayMs: "dashboardRetryDelayMs",
+  notificationSoundEnabled: "dashboardNotificationSoundEnabled",
 } as const;
 
 const DEFAULT_AUTO_REFRESH_ENABLED = true;
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
 const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY_MS = 2000;
+const DEFAULT_NOTIFICATION_SOUND_ENABLED = true;
+const NOTIFICATION_POLL_INTERVAL_MS = 3000;
+
+function isValidationAlertEntry(entry: LogEntry): boolean {
+  const message = entry.message.toLowerCase();
+  const errorMessage = entry.context?.error;
+  const serializedErrorMessage =
+    errorMessage && typeof errorMessage === "object"
+      ? (errorMessage as { message?: unknown }).message
+      : null;
+
+  return (
+    message.includes("payload validation failed") ||
+    (typeof serializedErrorMessage === "string" && serializedErrorMessage.toLowerCase().includes("validation failed"))
+  );
+}
 
 function getStoredValue<T>(key: string, fallback: T, parser: (value: string) => T): T {
   try {
@@ -261,6 +279,13 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? Math.max(0, parsed) : DEFAULT_RETRY_DELAY_MS;
     }),
+  );
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState<boolean>(() =>
+    getStoredValue(
+      STORAGE_KEYS.notificationSoundEnabled,
+      DEFAULT_NOTIFICATION_SOUND_ENABLED,
+      (value) => value === "true",
+    ),
   );
   const [pipelines, setPipelines] = useState<PipelineListItem[]>([]);
   const [jobs, setJobs] = useState<JobListItem[]>([]);
@@ -330,6 +355,9 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logsError, setLogsError] = useState<string>("");
+  const [notifications, setNotifications] = useState<LogEntry[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false);
+  const [notificationsError, setNotificationsError] = useState<string>("");
   const [workerHealth, setWorkerHealth] = useState<WorkerHealth>(DEFAULT_WORKER_HEALTH);
   const [loadingWorkerHealth, setLoadingWorkerHealth] = useState<boolean>(false);
   const [workerHealthError, setWorkerHealthError] = useState<string>("");
@@ -1047,6 +1075,39 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     }
   }, [apiKey]);
 
+  const loadNotifications = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setLoadingNotifications(true);
+      }
+      setNotificationsError("");
+
+      try {
+        const response = await apiRequest<ApiListResponse<LogEntry>>(
+          `/logs?${new URLSearchParams({
+            limit: "100",
+            level: "error",
+            source: "worker",
+            search: "validation",
+          }).toString()}`,
+          { apiKey },
+        );
+
+        const items = Array.isArray(response.data) ? response.data : [];
+        const alertItems = items.filter(isValidationAlertEntry);
+
+        setNotifications(alertItems);
+      } catch (error) {
+        setNotificationsError(error instanceof Error ? error.message : "Failed to load notifications.");
+      } finally {
+        if (!silent) {
+          setLoadingNotifications(false);
+        }
+      }
+    },
+    [apiKey],
+  );
+
   const clearJobsPipelineFilter = useCallback(async () => {
     setJobsPipelineFilter(null);
 
@@ -1273,10 +1334,11 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       localStorage.setItem(STORAGE_KEYS.refreshIntervalMs, String(refreshIntervalMs));
       localStorage.setItem(STORAGE_KEYS.retryMaxAttempts, String(retryMaxAttempts));
       localStorage.setItem(STORAGE_KEYS.retryDelayMs, String(retryDelayMs));
+      localStorage.setItem(STORAGE_KEYS.notificationSoundEnabled, String(notificationSoundEnabled));
     } catch {
       // localStorage can be blocked in some contexts.
     }
-  }, [autoRefreshEnabled, refreshIntervalMs, retryDelayMs, retryMaxAttempts]);
+  }, [autoRefreshEnabled, notificationSoundEnabled, refreshIntervalMs, retryDelayMs, retryMaxAttempts]);
 
   const resetDashboardSettings = useCallback(() => {
     setApiKey("");
@@ -1284,6 +1346,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setRefreshIntervalMs(DEFAULT_REFRESH_INTERVAL_MS);
     setRetryMaxAttempts(DEFAULT_RETRY_MAX_ATTEMPTS);
     setRetryDelayMs(DEFAULT_RETRY_DELAY_MS);
+    setNotificationSoundEnabled(DEFAULT_NOTIFICATION_SOUND_ENABLED);
     setJobsStatusFilter("");
     setAppliedJobsStatusFilter("");
     setJobsSearchText("");
@@ -1313,6 +1376,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     resetDashboardSettings();
   }, [resetDashboardSettings]);
 
+  const shouldTrackNotifications = activePage === "notifications" || notificationSoundEnabled;
+
   useEffect(() => {
     if (activePage !== "logs" && activePage !== "settings") {
       void loadOverview();
@@ -1324,6 +1389,14 @@ export function useDashboard(activePage: DashboardPage = "overview") {
       void loadLogs();
     }
   }, [activePage, loadLogs]);
+
+  useEffect(() => {
+    if (!shouldTrackNotifications) {
+      return;
+    }
+
+    void loadNotifications();
+  }, [loadNotifications, shouldTrackNotifications]);
 
   useEffect(() => {
     if (activePage === "settings") {
@@ -1386,6 +1459,18 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     return () => clearInterval(intervalId);
   }, [activePage, autoRefreshEnabled, loadLogs, loadOverview, loadJobDetails, loadPipelineDetails, loadWorkerHealth, refreshIntervalMs, selectedJobId, selectedPipelineDetailsId]);
 
+  useEffect(() => {
+    if (!shouldTrackNotifications) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      void loadNotifications(true);
+    }, NOTIFICATION_POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [loadNotifications, shouldTrackNotifications]);
+
   return {
     apiKey,
     setApiKey,
@@ -1399,6 +1484,8 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setRetryMaxAttempts,
     retryDelayMs,
     setRetryDelayMs,
+    notificationSoundEnabled,
+    setNotificationSoundEnabled,
     resetDashboardSettings,
     clearLocalSettings,
     pipelines,
@@ -1488,6 +1575,9 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     handleCancelDeliveryRetry,
     loadingLogs,
     logsError,
+    notifications,
+    loadingNotifications,
+    notificationsError,
     workerHealth,
     loadingWorkerHealth,
     workerHealthError,
@@ -1502,5 +1592,6 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     filteredLogs,
     refreshOverview: () => loadOverview(false),
     refreshLogs: () => loadLogs(false),
+    refreshNotifications: () => loadNotifications(false),
   };
 }

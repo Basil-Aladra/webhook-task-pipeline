@@ -22,6 +22,18 @@ const workerActor = 'worker';
 let isPolling = false;
 let emptyPollCount = 0;
 
+function getValidationAlertType(message: string): 'unexpected_fields' | 'invalid_enum' | 'invalid_type_or_shape' {
+  if (message.includes('unexpected field(s):')) {
+    return 'unexpected_fields';
+  }
+
+  if (message.includes('Invalid enum value')) {
+    return 'invalid_enum';
+  }
+
+  return 'invalid_type_or_shape';
+}
+
 async function pollDeliveryRetries(): Promise<boolean> {
   const claimedAttempt = await claimNextRetryableDeliveryAttempt();
   if (!claimedAttempt) {
@@ -271,14 +283,24 @@ export async function poll(): Promise<void> {
     workerActor,
   );
 
+  const processingErrorMessage =
+    typeof result.error.message === 'string' ? result.error.message : 'Processing failed';
+  const isValidationFailure = processingErrorMessage.startsWith('Validation failed:');
+
   logger.error(
-    'Job failed during processing',
+    isValidationFailure ? 'Payload validation failed during processing' : 'Job failed during processing',
     {
       jobId: job.id,
       pipelineId: job.pipelineId,
       error: result.error,
+      validationFailure: isValidationFailure,
+      ...(isValidationFailure
+        ? {
+            validationAlertType: getValidationAlertType(processingErrorMessage),
+          }
+        : {}),
     },
-    new Error(typeof result.error.message === 'string' ? result.error.message : 'Processing failed'),
+    new Error(processingErrorMessage),
   );
 }
 

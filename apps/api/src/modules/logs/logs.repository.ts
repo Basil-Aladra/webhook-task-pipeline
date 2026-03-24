@@ -15,6 +15,7 @@ type LogRow = {
   job_id: string | null;
   pipeline_id: string | null;
   correlation_id: string | null;
+  context: Record<string, unknown> | null;
 };
 
 const LOG_FILTER_SQL = {
@@ -33,6 +34,7 @@ export type LogListItem = {
   jobId: string | null;
   pipelineId: string | null;
   correlationId: string | null;
+  context: Record<string, unknown> | null;
 };
 
 function toIsoString(value: TimestampValue): string {
@@ -53,6 +55,7 @@ function mapLogRow(row: LogRow): LogListItem {
     jobId: row.job_id,
     pipelineId: row.pipeline_id,
     correlationId: row.correlation_id,
+    context: row.context,
   };
 }
 
@@ -110,7 +113,8 @@ export async function getLogs(
       message,
       job_id,
       pipeline_id,
-      correlation_id
+      correlation_id,
+      context
     FROM logs
     ${whereSql}
     ORDER BY timestamp DESC, id DESC

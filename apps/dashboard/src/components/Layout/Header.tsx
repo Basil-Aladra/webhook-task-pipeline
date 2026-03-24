@@ -1,9 +1,9 @@
 type HeaderProps = {
   apiKey: string;
   onApiKeyChange: (value: string) => void;
-  currentPage: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
+  currentPage: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "notifications" | "settings";
   onNavigate: (
-    page: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings",
+    page: "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "notifications" | "settings",
   ) => void;
   autoRefreshEnabled: boolean;
   refreshIntervalMs: number;
@@ -68,6 +68,13 @@ export function Header({
             className={navButtonClass(currentPage === "logs")}
           >
             Logs
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate("notifications")}
+            className={navButtonClass(currentPage === "notifications")}
+          >
+            Notifications
           </button>
           <button
             type="button"

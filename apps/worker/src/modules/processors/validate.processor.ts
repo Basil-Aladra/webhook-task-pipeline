@@ -2,19 +2,25 @@ import { z } from 'zod';
 import { logger } from '../../shared/logger';
 import { IProcessor, ProcessorInput, ProcessorOutput } from './processor.interface';
 
-const orderPayloadSchema = z.object({
-  orderId: z.string().min(1, 'orderId must be a string'),
-  customerName: z.string().min(1, 'customerName must be a string'),
-  amount: z.number({
-    invalid_type_error: 'amount must be a number',
-    required_error: 'amount must be a number',
-  }),
-  status: z.enum(['new', 'paid', 'cancelled']).optional(),
-});
+const orderPayloadSchema = z
+  .object({
+    orderId: z.string().min(1, 'orderId must be a string'),
+    customerName: z.string().min(1, 'customerName must be a string'),
+    amount: z.number({
+      invalid_type_error: 'amount must be a number',
+      required_error: 'amount must be a number',
+    }),
+    status: z.enum(['new', 'paid', 'cancelled']).optional(),
+  })
+  .strict();
 
 function buildValidationErrorMessage(error: z.ZodError): string {
   return error.issues
     .map((issue) => {
+      if (issue.code === z.ZodIssueCode.unrecognized_keys) {
+        return `payload: unexpected field(s): ${issue.keys.join(', ')}`;
+      }
+
       const field = issue.path.length > 0 ? issue.path.join('.') : 'payload';
       return `${field}: ${issue.message}`;
     })

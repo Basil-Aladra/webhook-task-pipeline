@@ -6,6 +6,8 @@ import { JobsTable } from "./components/Jobs/JobsTable";
 import { Drawer } from "./components/Layout/Drawer";
 import { Header } from "./components/Layout/Header";
 import { LogsPage } from "./components/Logs/LogsPage";
+import { NotificationsPage } from "./components/Notifications/NotificationsPage";
+import { NotificationSoundMonitor } from "./components/Notifications/NotificationSoundMonitor";
 import { CreatePipelineModal } from "./components/Pipelines/CreatePipelineModal";
 import { PipelineDetails } from "./components/Pipelines/PipelineDetails";
 import { PipelineSecretModal } from "./components/Pipelines/PipelineSecretModal";
@@ -16,13 +18,14 @@ import { ToastProvider } from "./components/Toast/ToastProvider";
 import { SendWebhookForm } from "./components/Webhooks/SendWebhookForm";
 import { useDashboard } from "./hooks/useDashboard";
 
-type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
+type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "notifications" | "settings";
 
 function getPageFromHash(hash: string): DashboardPage {
   if (hash === "#/pipelines") return "pipelines";
   if (hash === "#/jobs") return "jobs";
   if (hash === "#/dead-letters") return "dead-letters";
   if (hash === "#/logs") return "logs";
+  if (hash === "#/notifications") return "notifications";
   if (hash === "#/settings") return "settings";
   return "overview";
 }
@@ -32,6 +35,7 @@ function getHashForPage(page: DashboardPage): string {
   if (page === "jobs") return "#/jobs";
   if (page === "dead-letters") return "#/dead-letters";
   if (page === "logs") return "#/logs";
+  if (page === "notifications") return "#/notifications";
   if (page === "settings") return "#/settings";
   return "#/";
 }
@@ -89,20 +93,30 @@ export default function App(): JSX.Element {
             ? "Dead Letters"
             : currentPage === "logs"
               ? "Logs & Observability"
+              : currentPage === "notifications"
+                ? "Notifications"
               : "Settings";
   const pageViewLabel =
     currentPage === "overview"
       ? "Operations View"
       : currentPage === "logs"
         ? "Observability View"
+        : currentPage === "notifications"
+          ? "Alerts View"
         : currentPage === "settings"
           ? "Configuration View"
           : "Management View";
-  const showOverviewDataStates = currentPage !== "logs" && currentPage !== "settings";
+  const showOverviewDataStates =
+    currentPage !== "logs" && currentPage !== "notifications" && currentPage !== "settings";
 
   return (
     <ToastProvider>
       <div className="min-h-screen bg-slate-100 text-slate-900 lg:flex">
+        <NotificationSoundMonitor
+          notifications={dashboard.notifications}
+          soundEnabled={dashboard.notificationSoundEnabled}
+        />
+
         <Header
           apiKey={dashboard.apiKey}
           onApiKeyChange={dashboard.setApiKey}
@@ -328,6 +342,17 @@ export default function App(): JSX.Element {
                 dashboard.setLogsSearchText("");
                 dashboard.setLogsPipelineFilter("");
               }}
+            />
+          )}
+
+          {currentPage === "notifications" && (
+            <NotificationsPage
+              notifications={dashboard.notifications}
+              loadingNotifications={dashboard.loadingNotifications}
+              notificationsError={dashboard.notificationsError}
+              soundEnabled={dashboard.notificationSoundEnabled}
+              onSoundEnabledChange={dashboard.setNotificationSoundEnabled}
+              onRefresh={dashboard.refreshNotifications}
             />
           )}
 

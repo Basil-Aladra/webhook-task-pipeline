@@ -56,9 +56,29 @@ async function testAcceptsValidPayload(): Promise<void> {
   assert.equal(result.result.status, 'paid');
 }
 
+async function testRejectsUnexpectedFields(): Promise<void> {
+  const processor = new ValidateProcessor();
+
+  await assert.rejects(
+    () =>
+      processor.process({
+        payload: {
+          orderId: '123',
+          customerName: 'John',
+          amount: 123,
+          file: 'http://http://localhost:5173/#/pipelines',
+        } as unknown as Record<string, unknown>,
+        config: {},
+        actionType: 'validate',
+      }),
+    /Validation failed: payload: unexpected field\(s\): file/,
+  );
+}
+
 async function run(): Promise<void> {
   await testRejectsInvalidAmount();
   await testRejectsMissingCustomerName();
+  await testRejectsUnexpectedFields();
   await testAcceptsValidPayload();
   console.log('validate.processor tests passed');
 }
