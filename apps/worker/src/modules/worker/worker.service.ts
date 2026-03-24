@@ -23,7 +23,24 @@ export async function processJob(job: Job): Promise<ProcessJobResult> {
       throw new Error(`Pipeline not found for job ${job.id}`);
     }
 
-    const enabledActions = pipelineWithActions.actions.filter((action) => action.enabled);
+    const enabledActions = pipelineWithActions.actions
+      .filter((action) => action.enabled)
+      // Validation should always run before payload mutation processors, even if configured later.
+      .sort((left, right) => {
+        if (left.actionType === right.actionType) {
+          return left.orderIndex - right.orderIndex;
+        }
+
+        if (left.actionType === 'validate') {
+          return -1;
+        }
+
+        if (right.actionType === 'validate') {
+          return 1;
+        }
+
+        return left.orderIndex - right.orderIndex;
+      });
 
     let currentPayload: Record<string, unknown> = { ...job.payload };
 

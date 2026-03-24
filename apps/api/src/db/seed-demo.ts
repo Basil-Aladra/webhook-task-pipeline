@@ -14,6 +14,13 @@ type DemoPipelineSeed = {
 
 const DEMO_PIPELINES: DemoPipelineSeed[] = [
   {
+    name: 'Demo Orders Pipeline',
+    webhookPath: 'demo-orders',
+    description: 'Legacy demo pipeline kept in sync with the built-in success scenario.',
+    subscriberPath: '/api/v1/demo/subscribers/success',
+    maxRetries: 3,
+  },
+  {
     name: 'Demo Success Pipeline',
     webhookPath: 'demo-success',
     description: 'Delivers successfully to the built-in demo subscriber.',
@@ -79,8 +86,9 @@ async function seedPipeline(
     `
       INSERT INTO pipeline_actions (pipeline_id, order_index, action_type, config, enabled)
       VALUES
-        ($1, 1, 'transform', $2::jsonb, true),
-        ($1, 2, 'enrich', $3::jsonb, true)
+        ($1, 1, 'validate', '{}'::jsonb, true),
+        ($1, 2, 'transform', $2::jsonb, true),
+        ($1, 3, 'enrich', $3::jsonb, true)
     `,
     [
       pipelineId,

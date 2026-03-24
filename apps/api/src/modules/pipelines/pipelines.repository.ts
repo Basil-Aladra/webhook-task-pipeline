@@ -27,7 +27,7 @@ type PipelineActionRow = {
   id: string;
   pipeline_id: string;
   order_index: number;
-  action_type: 'transform' | 'enrich' | 'filter';
+  action_type: 'validate' | 'transform' | 'enrich' | 'filter';
   config: Record<string, unknown>;
   enabled: boolean;
   created_at: TimestampValue;
@@ -92,7 +92,7 @@ export type PipelineWithRelations = {
     id: string;
     pipelineId: string;
     orderIndex: number;
-    actionType: 'transform' | 'enrich' | 'filter';
+    actionType: 'validate' | 'transform' | 'enrich' | 'filter';
     config: Record<string, unknown>;
     enabled: boolean;
     createdAt: string;

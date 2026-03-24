@@ -30,13 +30,20 @@ VALUES
   (
     (SELECT id FROM selected_pipeline),
     1,
+    'validate',
+    '{}'::jsonb,
+    true
+  ),
+  (
+    (SELECT id FROM selected_pipeline),
+    2,
     'transform',
     '{"rename": {"orderId": "id"}}'::jsonb,
     true
   ),
   (
     (SELECT id FROM selected_pipeline),
-    2,
+    3,
     'enrich',
     '{"add": {"source": "demo-seed"}}'::jsonb,
     true
@@ -61,7 +68,7 @@ INSERT INTO pipeline_subscribers (
 )
 VALUES (
   (SELECT id FROM selected_pipeline),
-  'http://localhost:4000/webhooks/results',
+  'http://localhost:3000/api/v1/demo/subscribers/success',
   true,
   5000,
   3,

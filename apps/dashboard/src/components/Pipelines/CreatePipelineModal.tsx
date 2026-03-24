@@ -1,5 +1,5 @@
 type CreatePipelineStatus = "paused" | "active";
-type ActionType = "transform" | "enrich" | "filter";
+type ActionType = "validate" | "transform" | "enrich" | "filter";
 
 type CreatePipelineModalProps = {
   open: boolean;
@@ -106,10 +106,14 @@ export function CreatePipelineModal({
                 onChange={(event) => setCreatePipelineActionType(event.target.value as ActionType)}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
               >
+                <option value="validate">validate</option>
                 <option value="transform">transform</option>
                 <option value="enrich">enrich</option>
                 <option value="filter">filter</option>
               </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Use <span className="font-mono">validate</span> to fail invalid payloads before other processors run.
+              </p>
             </div>
           </div>
 

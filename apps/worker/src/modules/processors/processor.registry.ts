@@ -2,8 +2,10 @@ import { EnrichProcessor } from './enrich.processor';
 import { FilterProcessor } from './filter.processor';
 import { IProcessor } from './processor.interface';
 import { TransformProcessor } from './transform.processor';
+import { ValidateProcessor } from './validate.processor';
 
 const processorRegistry: Record<string, IProcessor> = {
+  validate: new ValidateProcessor(),
   transform: new TransformProcessor(),
   enrich: new EnrichProcessor(),
   filter: new FilterProcessor(),

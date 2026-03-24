@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const pipelineStatusSchema = z.enum(['active', 'paused', 'archived']);
 
 // Allowed action types supported by the worker.
-export const actionTypeSchema = z.enum(['transform', 'enrich', 'filter']);
+export const actionTypeSchema = z.enum(['validate', 'transform', 'enrich', 'filter']);
 
 // Each processing action in the pipeline configuration.
 export const createPipelineActionSchema = z.object({

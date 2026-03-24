@@ -9,7 +9,7 @@ type JobStatus =
   | "completed"
   | "failed_processing"
   | "failed_delivery";
-type ActionType = "transform" | "enrich" | "filter";
+type ActionType = "validate" | "transform" | "enrich" | "filter";
 type CreatePipelineStatus = "paused" | "active";
 export type DashboardPage = "overview" | "pipelines" | "jobs" | "dead-letters" | "logs" | "settings";
 export type LogLevel = "info" | "warn" | "error";
@@ -290,7 +290,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
   const [createPipelineWebhookPath, setCreatePipelineWebhookPath] = useState<string>("");
   const [createPipelineDescription, setCreatePipelineDescription] = useState<string>("");
   const [createPipelineStatus, setCreatePipelineStatus] = useState<CreatePipelineStatus>("paused");
-  const [createPipelineActionType, setCreatePipelineActionType] = useState<ActionType>("transform");
+  const [createPipelineActionType, setCreatePipelineActionType] = useState<ActionType>("validate");
   const [createPipelineActionConfigText, setCreatePipelineActionConfigText] = useState<string>("{}");
   const [createPipelineSubscriberUrl, setCreatePipelineSubscriberUrl] = useState<string>("");
   const [showPipelineSecretModal, setShowPipelineSecretModal] = useState<boolean>(false);
@@ -597,7 +597,7 @@ export function useDashboard(activePage: DashboardPage = "overview") {
     setCreatePipelineWebhookPath("");
     setCreatePipelineDescription("");
     setCreatePipelineStatus("paused");
-    setCreatePipelineActionType("transform");
+    setCreatePipelineActionType("validate");
     setCreatePipelineActionConfigText("{}");
     setCreatePipelineSubscriberUrl("");
     setCreatePipelineError("");
