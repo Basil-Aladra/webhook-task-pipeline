@@ -33,6 +33,7 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |  |  |- src/
 |  |     |- db/
 |  |     |  |- migrate.ts           # SQL migration runner
+|  |     |  |- seed-demo.ts         # Seeds repeatable demo pipelines
 |  |     |  |- pool.ts              # PostgreSQL pool for API
 |  |     |- main.ts                 # Express app bootstrap and route mounting
 |  |     |- middleware/
@@ -48,9 +49,12 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |  |     |  |  |- admin.controller.ts # Demo/admin reset handler
 |  |     |  |  |- admin.repository.ts # Runtime-data reset SQL
 |  |     |  |  |- admin.routes.ts     # POST /admin/reset-runtime-data
+|  |     |  |- demo/
+|  |     |  |  |- demo.controller.ts # Built-in demo subscriber endpoints
+|  |     |  |  |- demo.routes.ts     # POST /demo/subscribers/*
 |  |     |  |- jobs/
-|  |     |  |  |- jobs.controller.ts # Job list/detail/dead-letter/retry handlers
-|  |     |  |  |- jobs.repository.ts # Job queries and manual retry mutation
+|  |     |  |  |- jobs.controller.ts # Job list/detail/dead-letter/operator-action handlers
+|  |     |  |  |- jobs.repository.ts # Job queries and manual replay/retry mutations
 |  |     |  |  |- jobs.routes.ts     # Job routes
 |  |     |  |  |- jobs.types.ts      # Job query/path schemas
 |  |     |  |- logs/
@@ -113,7 +117,7 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |  |     |  |  |- ToastProvider.tsx    # Minimal toast context/state
 |  |     |  |  |- ToastViewport.tsx    # Fixed top-right toast stack
 |  |     |  |- Webhooks/
-|  |     |     |- SendWebhookForm.tsx  # Quick webhook send form
+|  |     |     |- SendWebhookForm.tsx  # Quick webhook send form with demo helper actions
 |  |     |- hooks/
 |  |        |- useDashboard.ts         # Main dashboard state, localStorage, and data loading
 |  |- worker/
@@ -161,7 +165,7 @@ Source tree below excludes dependency/build/tool-metadata directories: `.git`, `
 |     |  |- 008_create_api_keys.sql
 |     |  |- 009_create_logs.sql          # Persisted structured logs
 |     |- seeds/
-|        |- 001_demo_pipeline.sql      # Demo pipeline, actions, subscriber seed
+|        |- 001_demo_pipeline.sql      # Legacy demo SQL seed file
 |- packages/
 |  |- shared/
 |     |- package.json                  # Shared package manifest
@@ -358,10 +362,16 @@ Subscriber URLs
 | `POST` | `/api/v1/pipelines/:pipelineId/webhook-secret/rotate` | Generate or rotate a pipeline webhook secret; requires `x-api-key` | None | `200 { data: { pipelineId, webhookSecret, hasWebhookSecret } }` |
 | `DELETE` | `/api/v1/pipelines/:pipelineId` | Soft-delete by archiving pipeline; requires `x-api-key` | None | `200 { data: archivedPipeline }` |
 | `POST` | `/api/v1/webhooks/:webhookPath` | Public webhook ingestion; rate-limited; optional signature verification | `{ payload: object, idempotencyKey? }` | `202 { data: { jobId, status: "queued", message } }` |
+| `POST` | `/api/v1/demo/subscribers/success` | Built-in local subscriber endpoint that always returns success for demo flows | Generic delivery JSON body | `200 { data: { scenario: "success", message } }` |
+| `POST` | `/api/v1/demo/subscribers/retryable-failure` | Built-in local subscriber endpoint that always returns a retryable failure for demos | Generic delivery JSON body | `500 { error: { code: "DEMO_RETRYABLE_FAILURE", message } }` |
+| `POST` | `/api/v1/demo/subscribers/final-failure` | Built-in local subscriber endpoint that always fails; use with low retry count for dead-letter demos | Generic delivery JSON body | `500 { error: { code: "DEMO_FINAL_FAILURE", message } }` |
 | `GET` | `/api/v1/jobs` | List jobs; requires `x-api-key` | Query: `pipelineId?`, `status?`, `page`, `limit` | `200 { data: jobs[], meta }` |
 | `GET` | `/api/v1/jobs/dead-letter` | List jobs with `failed_delivery`; requires `x-api-key` | None | `200 { data: deadLetterJobs[], meta: { total } }` |
 | `GET` | `/api/v1/jobs/:jobId` | Get full job details; requires `x-api-key` | None | `200 { data: jobWithStatusHistoryAndDeliveryAttempts }` |
 | `POST` | `/api/v1/jobs/:jobId/retry` | Manually retry `failed_processing` or `failed_delivery` jobs; requires `x-api-key` | None | `200 { data: { jobId, status, message } }` |
+| `POST` | `/api/v1/jobs/:jobId/replay` | Create a fresh queued copy of a completed/failed job; requires `x-api-key` | None | `200 { data: { originalJobId, newJobId, status, message } }` |
+| `POST` | `/api/v1/jobs/:jobId/delivery-attempts/:attemptId/retry` | Re-arm a failed delivery attempt immediately; requires `x-api-key` | None | `200 { data: { jobId, attemptId, status, message } }` |
+| `POST` | `/api/v1/jobs/:jobId/delivery-attempts/:attemptId/cancel-retry` | Cancel a pending delivery retry and finalize failure if needed; requires `x-api-key` | None | `200 { data: { jobId, attemptId, status, message } }` |
 | `GET` | `/api/v1/logs` | Query persisted structured logs; requires `x-api-key` | Query: `level?`, `source?`, `jobId?`, `pipelineId?`, `search?`, `limit` | `200 { data: logs[], meta: { total, limit } }` |
 | `GET` | `/api/v1/metrics` | Aggregate dashboard metrics; requires `x-api-key` | None | `200 { data: metrics }` |
 | `GET` | `/api/v1/worker/health` | Proxy worker heartbeat/uptime info; requires `x-api-key` | None | `200 { data: { status, workerId, lastHeartbeat, uptimeSeconds } }` |
@@ -467,6 +477,8 @@ Common error shape:
 - **Optional webhook signatures are per-pipeline:** `verifyWebhookSignature.ts` reads `pipelines.webhook_secret` by `webhook_path`; if no secret exists, verification is skipped.
 - **API keys are stored hashed, not plaintext:** `auth.service.ts` generates `wpk_...` keys, stores only a SHA-256 hash, and `apiKeyAuth.ts` updates `last_used_at` on valid use.
 - **Manual retry reuses existing worker flow:** `POST /jobs/:jobId/retry` does not process inline. It re-queues failed processing jobs or re-arms failed delivery attempts so the worker consumes them through existing logic.
+- **Manual replay preserves audit history:** `POST /jobs/:jobId/replay` creates a brand-new queued job instead of mutating the original record, which keeps the original job timeline intact.
+- **Demo scenarios are built into the API:** lightweight demo subscriber endpoints plus `apps/api/src/db/seed-demo.ts` provide repeatable success, retryable-failure, and final-failure flows without external receivers.
 - **Current code does not use recursive `setTimeout`:** despite being a common polling pattern, `apps/worker/src/modules/worker/worker.runner.ts` currently uses `setInterval` plus an `isPolling` guard.
 - **Current code does not implement exponential backoff:** retry scheduling uses fixed per-subscriber `retry_backoff_ms` via `computeNextRetryAt()` in `delivery.service.ts`.
 
@@ -478,13 +490,17 @@ Common error shape:
 - API key generation endpoint
 - Full pipeline CRUD API, including action/subscriber replacement and webhook secret rotation
 - Queue-only webhook ingestion with idempotency support
-- Job list/detail/dead-letter APIs, manual retry API, and job lifecycle history
-- Metrics API, persisted Logs API, worker health API, and demo reset API
+- Job list/detail/dead-letter APIs, manual retry API, replay API, per-attempt retry/cancel APIs, and job lifecycle history
+- Metrics API, persisted Logs API, worker health API, built-in demo subscriber endpoints, and demo reset API
 - Worker polling, job reservation, stale-lock recovery, ordered action processing, delivery attempts, retry scheduling, and Discord webhook formatting
 - Structured logging persisted to PostgreSQL from API and worker
 - React dashboard with pages for Overview, Pipelines, Jobs, Dead Letters, Logs, and Settings
 - Drawer-based Job Details and Pipeline Details inspectors
-- Webhook secret management, pipeline status toggle, advanced filtering, toast notifications, and reset-demo-data flow in the dashboard
+- Webhook secret management, pipeline status toggle, advanced filtering, toast notifications, explicit operator-action audit visibility, and reset-demo-data flow in the dashboard
+- Demo helper flows:
+  - built-in demo subscriber endpoints
+  - repeatable `seed:demo` script
+  - Send Webhook helper with pipeline webhook URL copy and sample payload loader
 - CI typechecks/builds API, worker, and dashboard, then builds Docker images
 
 ### Partially implemented
@@ -492,6 +508,7 @@ Common error shape:
 - Retry settings in the dashboard Settings page are local UI preferences only; they do not change subscriber retry configuration stored in PostgreSQL.
 - Legacy static dashboard file `apps/dashboard/index.html` still exists even though the React/Vite app in `apps/dashboard/src` is the primary UI.
 - Worker health is proxied from a small internal worker HTTP server rather than being stored centrally.
+- `infra/postgres/seeds/001_demo_pipeline.sql` still exists as a legacy SQL seed even though the primary repeatable demo setup now comes from `apps/api/src/db/seed-demo.ts`.
 
 ### Planned or implied but not yet built
 - No migration tracking table
@@ -732,12 +749,57 @@ The Jobs page uses an off-canvas inspector for selected jobs, including a vertic
 ### Frontend Changes
 - Reusable drawer in `apps/dashboard/src/components/Layout/Drawer.tsx`
 - Job inspector in `apps/dashboard/src/components/Jobs/JobDetails.tsx`
+- Dedicated Operator Actions section inside the job inspector for replay/retry/cancel audit entries
 
 ### How it works
-The Jobs page table remains stable while the drawer opens over the page. The inspector shows payloads, result payloads, retry actions, delivery attempts, and a color-coded timeline derived from job status history plus delivery attempt outcomes.
+The Jobs page table remains stable while the drawer opens over the page. The inspector shows payloads, result payloads, retry actions, delivery attempts, an explicit operator-audit section, and a color-coded timeline derived from job status history plus delivery attempt outcomes and manual action log entries.
 
 ### Demo Usage
-Open a job from the Jobs page and show the right-side inspector opening as an off-canvas drawer. Use a failed job to highlight retry and failure timeline entries.
+Open a job from the Jobs page and show the right-side inspector opening as an off-canvas drawer. Use a failed job to highlight retry and failure timeline entries, then perform a manual operator action and show it appearing in both the Operator Actions section and the lifecycle timeline.
+
+## Feature: Manual Operator Actions
+
+### Description
+Operators can act on failed or completed work directly from the dashboard by replaying jobs, retrying failed deliveries, or cancelling pending retries.
+
+### Backend Changes
+- `POST /api/v1/jobs/:jobId/retry`
+- `POST /api/v1/jobs/:jobId/replay`
+- `POST /api/v1/jobs/:jobId/delivery-attempts/:attemptId/retry`
+- `POST /api/v1/jobs/:jobId/delivery-attempts/:attemptId/cancel-retry`
+- Transactional state handling and audit logging in `apps/api/src/modules/jobs/jobs.repository.ts` and `apps/api/src/modules/jobs/jobs.controller.ts`
+
+### Frontend Changes
+- Confirmation UX and action buttons in `apps/dashboard/src/components/Jobs/JobDetails.tsx`
+- Action handlers and loading state in `apps/dashboard/src/hooks/useDashboard.ts`
+- Toast-based success/error feedback for operator actions
+
+### How it works
+Replay creates a brand-new queued job so the original audit trail remains unchanged. Delivery retry re-arms a failed attempt immediately. Cancel retry finalizes a pending retry if needed. Each action validates current state, records audit logs, refreshes job details, and updates the dashboard view.
+
+### Demo Usage
+Open a failed job, click `Retry Delivery` or `Cancel Retry`, confirm the action, and show the updated delivery diagnostics. Then use `Replay Job` on a failed or completed job and show the new queued job plus the audit entry in the inspector and Logs page.
+
+## Feature: Demo Seed and Built-In Demo Subscribers
+
+### Description
+The project includes built-in demo subscriber endpoints and a repeatable seed script so common success and failure scenarios can be reproduced quickly without external webhook receivers.
+
+### Backend Changes
+- Demo routes in `apps/api/src/modules/demo/demo.routes.ts`
+- Demo controllers in `apps/api/src/modules/demo/demo.controller.ts`
+- Repeatable demo seed script in `apps/api/src/db/seed-demo.ts`
+- Root script `npm run demo:seed` delegates to `apps/api` demo seeding
+
+### Frontend Changes
+- The dashboard reuses the seeded pipelines directly; no dedicated demo page was added
+- The Send Webhook form includes a small helper for loading a sample payload and copying the selected webhook URL
+
+### How it works
+`seed-demo.ts` creates three active demo pipelines: `demo-success`, `demo-retryable-failure`, and `demo-final-failure`. Each pipeline points to a built-in API subscriber endpoint that intentionally succeeds or fails, making retries, dead letters, and operator controls easy to demonstrate repeatedly.
+
+### Demo Usage
+Run `npm run demo:seed`, open the dashboard, and use the Send Webhook helper on the seeded pipelines to demonstrate successful delivery, retryable failure, final failure, and the follow-up operator actions.
 
 ## Feature: Advanced Filtering for Jobs and Logs
 
