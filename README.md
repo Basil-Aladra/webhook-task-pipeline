@@ -103,8 +103,8 @@ Subscriber URLs
 ### Clone and setup
 
 ```bash
-git clone <your-repo-url>
-cd finalprojectfts
+git clone https://github.com/Basil-Aladra/webhook-task-pipeline.git
+cd webhook-task-pipeline
 cp .env.example .env
 ```
 
@@ -112,6 +112,12 @@ cp .env.example .env
 
 ```bash
 docker compose up --build
+```
+
+### Run Fornt-end (UI)
+```bash
+  cd ./apps/dashboard
+  npm run dev
 ```
 
 Services:
