@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { useToast } from "../Toast/ToastProvider";
 import { JobDetails as JobDetailsType } from "../../hooks/useDashboard";
+import {
+  ActivityIcon,
+  AlertIcon,
+  CheckIcon,
+  ClockIcon,
+  InfoIcon,
+  JobsIcon,
+  NotificationIcon,
+  RefreshIcon,
+  SendIcon,
+} from "../Layout/Icons";
+import { useToast } from "../Toast/ToastProvider";
 
 type JobDetailsProps = {
   selectedJobId: string;
@@ -286,6 +297,15 @@ function buildTimelineItems(selectedJob: JobDetailsType): TimelineItem[] {
   );
 }
 
+function timelineBadgeClass(tone: TimelineItem["tone"]): string {
+  if (tone === "queued") return "ui-badge-neutral";
+  if (tone === "processing") return "ui-badge-info";
+  if (tone === "completed") return "ui-badge-success";
+  if (tone === "action") return "bg-violet-100 text-violet-700";
+  if (tone === "failed") return "ui-badge-danger";
+  return "bg-orange-100 text-orange-700";
+}
+
 export function JobDetails({
   selectedJobId,
   selectedJob,
@@ -380,13 +400,15 @@ export function JobDetails({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur">
+    <section className="ui-panel overflow-hidden xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
+      <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 px-5 py-5 backdrop-blur-xl sm:px-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Details Panel</p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-900">Job Inspector</h2>
-            <p className="ui-subtitle">Inspect payload, status timeline, and delivery attempts.</p>
+            <p className="ui-kicker">Operational diagnostics</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">Job Inspector</h2>
+            <p className="mt-2 ui-subtitle">
+              Follow payload execution, audit manual actions, and inspect every delivery attempt in one panel.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             {selectedJob && canReplay && onReplayJob && (
@@ -396,7 +418,7 @@ export function JobDetails({
                   setConfirmAction({
                     title: "Replay Job",
                     description:
-                      "This will queue a new copy of the job for full reprocessing. The original job will remain unchanged for audit purposes.",
+                      "This will queue a new copy of the job for full reprocessing. The original job stays unchanged for audit purposes.",
                     confirmLabel: "Replay Job",
                     confirmClassName: "ui-btn-secondary",
                     action: async () => {
@@ -431,19 +453,17 @@ export function JobDetails({
         {selectedJobId && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="ui-badge ui-badge-neutral">Selected Job</span>
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 font-mono text-xs text-slate-700">
+            <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-700">
               {selectedJobId}
             </span>
             {selectedStatus && (
-              <span className={`ui-badge capitalize ${statusClass(selectedStatus)}`}>
-                {selectedStatus}
-              </span>
+              <span className={`ui-badge capitalize ${statusClass(selectedStatus)}`}>{selectedStatus}</span>
             )}
           </div>
         )}
       </div>
 
-      <div className="space-y-6 p-4">
+      <div className="space-y-6 px-5 py-5 sm:px-6">
         {replayJobResult && selectedJobId && (
           <div className={replayJobResult.type === "success" ? "ui-feedback-success" : "ui-feedback-error"}>
             {replayJobResult.message}
@@ -463,112 +483,180 @@ export function JobDetails({
         )}
 
         {!selectedJobId && (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center">
-            <p className="text-sm font-medium text-slate-700">No job selected</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Choose a job from the table to open its details in this panel.
+          <div className="ui-empty-state">
+            <span className="ui-empty-icon">
+              <JobsIcon className="h-5 w-5" />
+            </span>
+            <p className="ui-empty-state-title mt-4">No job selected</p>
+            <p className="ui-empty-state-text">
+              Choose a job from the table to open its lifecycle, payload, delivery diagnostics, and recovery actions.
             </p>
           </div>
         )}
 
         {selectedJobId && loadingJobDetails && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center">
-            <p className="text-sm font-medium text-slate-700">Loading job details...</p>
-            <p className="mt-1 text-sm text-slate-500">Fetching payload, status history, and delivery attempts.</p>
+          <div className="ui-empty-state">
+            <span className="ui-empty-icon">
+              <ActivityIcon className="h-5 w-5" />
+            </span>
+            <p className="ui-empty-state-title mt-4">Loading job details</p>
+            <p className="ui-empty-state-text">Fetching payload data, status history, and delivery attempts.</p>
           </div>
         )}
 
         {selectedJobId && jobDetailsError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6">
-            <p className="text-sm font-medium text-red-700">Failed to load job details</p>
-            <p className="mt-1 text-sm text-red-600">{jobDetailsError}</p>
+          <div className="ui-feedback-error">
+            <p className="font-medium">Failed to load job details</p>
+            <p className="mt-1">{jobDetailsError}</p>
           </div>
         )}
 
         {selectedJobId && selectedJob && !loadingJobDetails && (
           <div className="space-y-6">
-            <div className="space-y-3 text-sm">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Job ID</p>
-                <p className="mt-1 break-all font-mono text-xs text-slate-700">{selectedJob.id}</p>
-              </div>
+            <section className="ui-inspector-hero">
+              <div className="relative">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="ui-card-icon-soft">
+                        <JobsIcon className="h-4 w-4" />
+                      </span>
+                      <span className={`ui-badge capitalize ${statusClass(selectedJob.status)}`}>{selectedJob.status}</span>
+                      <span className="ui-badge ui-badge-neutral">
+                        {deliveryAttempts.length} delivery attempt(s)
+                      </span>
+                    </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</p>
-                  <div className="mt-2">
-                    <span className={`ui-badge capitalize ${statusClass(selectedJob.status)}`}>
-                      {selectedJob.status}
-                    </span>
+                    <h3 className="mt-4 break-all text-2xl font-semibold tracking-tight text-slate-950">
+                      {selectedJob.id}
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Job payload, processing outcomes, manual operator audit, and per-attempt delivery diagnostics.
+                    </p>
+                  </div>
+
+                  <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3 lg:w-[320px] lg:grid-cols-1">
+                    <div className="ui-metric-tile">
+                      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <CheckIcon className="h-3.5 w-3.5" />
+                        Delivered
+                      </p>
+                      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                        {successfulAttemptsCount}
+                      </p>
+                    </div>
+                    <div className="ui-metric-tile">
+                      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <RefreshIcon className="h-3.5 w-3.5" />
+                        Retry pending
+                      </p>
+                      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                        {retryPendingCount}
+                      </p>
+                    </div>
+                    <div className="ui-metric-tile">
+                      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <AlertIcon className="h-3.5 w-3.5" />
+                        Final failures
+                      </p>
+                      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                        {finalFailureCount}
+                      </p>
+                    </div>
                   </div>
                 </div>
+              </div>
+            </section>
 
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Delivery Attempts</p>
-                  <p className="mt-2 text-lg font-semibold text-slate-900">
-                    {selectedJob.deliveryAttempts?.length ?? 0}
+            <section className="ui-inspector-section">
+              <div className="ui-inspector-section-header">
+                <div>
+                  <p className="ui-kicker">Payload inspection</p>
+                  <h3 className="mt-2 text-lg font-semibold text-slate-950">Request and Result</h3>
+                  <p className="mt-2 ui-subtitle">
+                    Compare the original job payload with the output produced by the processor chain.
                   </p>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">Payload JSON</h3>
-                <pre className="max-h-64 overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-100">
-                  {formatJson(selectedJob.payload)}
-                </pre>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="ui-data-card">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="ui-card-icon">
+                      <InfoIcon className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Payload JSON</p>
+                      <p className="text-sm text-slate-500">Stored event body before processing.</p>
+                    </div>
+                  </div>
+                  <pre className="ui-code-block">{formatJson(selectedJob.payload)}</pre>
+                </div>
+
+                <div className="ui-data-card">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="ui-card-icon">
+                      <CheckIcon className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Result Payload JSON</p>
+                      <p className="text-sm text-slate-500">Processor output that continued into delivery.</p>
+                    </div>
+                  </div>
+                  <pre className="ui-code-block">{formatJson(selectedJob.result_payload)}</pre>
+                </div>
               </div>
+            </section>
 
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">Result Payload JSON</h3>
-                <pre className="max-h-64 overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-100">
-                  {formatJson(selectedJob.result_payload)}
-                </pre>
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-3 flex items-start justify-between gap-3">
+            <section className="ui-inspector-section">
+              <div className="ui-inspector-section-header">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700">Operator Actions</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Manual replay and retry actions recorded for this job.
+                  <p className="ui-kicker">Manual controls</p>
+                  <h3 className="mt-2 text-lg font-semibold text-slate-950">Operator Actions</h3>
+                  <p className="mt-2 ui-subtitle">
+                    Replay, retry, and cancellation events logged against this job for audit visibility.
                   </p>
                 </div>
                 <span className="ui-badge ui-badge-neutral">{operatorActionLogs.length} action(s)</span>
               </div>
 
               {operatorActionLogs.length ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {operatorActionLogs.map((entry) => {
                     const meta = getOperatorActionMeta(entry);
 
                     return (
-                      <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
+                      <article key={entry.id} className="ui-data-card">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="text-sm font-semibold text-slate-900">{meta.title}</h4>
-                              <span className={`ui-badge ${meta.outcomeClassName}`}>{meta.outcomeLabel}</span>
-                              <span
-                                className={`ui-badge uppercase ${
-                                  entry.level === "info"
-                                    ? "ui-badge-info"
-                                    : entry.level === "warn"
-                                      ? "ui-badge-warn"
-                                      : "ui-badge-danger"
-                                }`}
-                              >
-                                {entry.level}
+                              <span className="ui-card-icon h-10 w-10 rounded-2xl">
+                                <NotificationIcon className="h-4 w-4" />
                               </span>
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-950">{meta.title}</h4>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className={`ui-badge ${meta.outcomeClassName}`}>{meta.outcomeLabel}</span>
+                                  <span
+                                    className={`ui-badge uppercase ${
+                                      entry.level === "info"
+                                        ? "ui-badge-info"
+                                        : entry.level === "warn"
+                                          ? "ui-badge-warn"
+                                          : "ui-badge-danger"
+                                    }`}
+                                  >
+                                    {entry.level}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <p className="mt-2 text-sm text-slate-600">{entry.message}</p>
+                            <p className="mt-4 text-sm leading-6 text-slate-700">{entry.message}</p>
                           </div>
 
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-right">
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Recorded</p>
-                            <p className="mt-1 text-sm text-slate-700">{formatDate(entry.timestamp)}</p>
+                          <div className="ui-metric-tile-muted xl:min-w-[220px]">
+                            <p className="ui-kicker">Recorded</p>
+                            <p className="mt-2 text-sm font-medium text-slate-800">{formatDate(entry.timestamp)}</p>
                           </div>
                         </div>
                       </article>
@@ -576,65 +664,75 @@ export function JobDetails({
                   })}
                 </div>
               ) : (
-                <p className="ui-feedback-empty">No manual operator actions recorded for this job.</p>
+                <div className="ui-empty-state">
+                  <span className="ui-empty-icon">
+                    <NotificationIcon className="h-5 w-5" />
+                  </span>
+                  <p className="ui-empty-state-title mt-4">No operator actions recorded</p>
+                  <p className="ui-empty-state-text">
+                    Replay, retry, and cancellation actions will appear here when applied to this job.
+                  </p>
+                </div>
               )}
-            </div>
+            </section>
 
-            <div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">Lifecycle Timeline</h3>
+            <section className="ui-inspector-section">
+              <div className="ui-inspector-section-header">
+                <div>
+                  <p className="ui-kicker">Execution history</p>
+                  <h3 className="mt-2 text-lg font-semibold text-slate-950">Lifecycle Timeline</h3>
+                  <p className="mt-2 ui-subtitle">
+                    Ordered status changes, delivery retries, and operator actions rendered as one unified sequence.
+                  </p>
+                </div>
+              </div>
+
               {timelineItems.length ? (
                 <ol className="space-y-0">
                   {timelineItems.map((item, index) => {
                     const isLast = index === timelineItems.length - 1;
 
                     return (
-                      <li key={item.id} className="relative flex gap-3 pb-5 last:pb-0">
-                        <div className="relative flex w-5 justify-center">
+                      <li key={item.id} className="relative flex gap-4 pb-5 last:pb-0">
+                        <div className="relative flex w-6 justify-center">
                           {!isLast && <span className="absolute top-3 h-full w-px bg-slate-200" />}
-                          <span
-                            className={`relative z-10 mt-1 block h-3 w-3 rounded-full ${timelineToneClass(item.tone)}`}
-                          />
+                          <span className={`relative z-10 mt-1 block h-3.5 w-3.5 rounded-full ${timelineToneClass(item.tone)}`} />
                         </div>
 
-                        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="ui-data-card-muted min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium capitalize text-slate-800">{item.label}</span>
-                            <span
-                              className={`ui-badge capitalize ${
-                                item.tone === "queued"
-                                  ? "ui-badge-neutral"
-                                  : item.tone === "processing"
-                                    ? "ui-badge-info"
-                                    : item.tone === "completed"
-                                      ? "ui-badge-success"
-                                      : item.tone === "action"
-                                        ? "bg-violet-100 text-violet-700"
-                                      : item.tone === "failed"
-                                        ? "ui-badge-danger"
-                                        : "bg-orange-100 text-orange-700"
-                              }`}
-                            >
-                              {item.tone}
-                            </span>
+                            <span className="text-sm font-semibold capitalize text-slate-900">{item.label}</span>
+                            <span className={`ui-badge capitalize ${timelineBadgeClass(item.tone)}`}>{item.tone}</span>
                           </div>
-                          <p className="mt-1 text-xs text-slate-500">{formatDate(item.timestamp)}</p>
-                          {item.message && <p className="mt-2 text-xs text-slate-600">{item.message}</p>}
+                          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                            {formatDate(item.timestamp)}
+                          </p>
+                          {item.message && <p className="mt-3 text-sm leading-6 text-slate-600">{item.message}</p>}
                         </div>
                       </li>
                     );
                   })}
                 </ol>
               ) : (
-                <p className="ui-feedback-empty">No lifecycle history available.</p>
+                <div className="ui-empty-state">
+                  <span className="ui-empty-icon">
+                    <ClockIcon className="h-5 w-5" />
+                  </span>
+                  <p className="ui-empty-state-title mt-4">No lifecycle history available</p>
+                  <p className="ui-empty-state-text">
+                    Status changes and delivery activity will appear here once the job moves through the system.
+                  </p>
+                </div>
               )}
-            </div>
+            </section>
 
-            <div>
-              <div className="mb-3 flex items-start justify-between gap-3">
+            <section className="ui-inspector-section">
+              <div className="ui-inspector-section-header">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700">Delivery Diagnostics</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Inspect subscriber targets, retry state, response details, and failure reasons.
+                  <p className="ui-kicker">Outbound delivery</p>
+                  <h3 className="mt-2 text-lg font-semibold text-slate-950">Delivery Diagnostics</h3>
+                  <p className="mt-2 ui-subtitle">
+                    Inspect destination targets, retry posture, HTTP outcomes, failure reasons, and request payloads.
                   </p>
                 </div>
                 <span className="ui-badge ui-badge-neutral">{deliveryAttempts.length} attempt(s)</span>
@@ -642,178 +740,170 @@ export function JobDetails({
 
               {deliveryAttempts.length ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Delivered</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-900">{successfulAttemptsCount}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Retry Pending</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-900">{retryPendingCount}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Final Failures</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-900">{finalFailureCount}</p>
-                    </div>
-                  </div>
+                  {deliveryAttempts.map((attempt) => {
+                    const outcome = getDeliveryOutcome(attempt);
+                    const isApplyingAttemptAction = deliveryActionAttemptId === attempt.id;
+                    const canRetryDeliveryAttempt =
+                      attempt.status === "failed_retryable" || attempt.status === "failed_final";
+                    const canCancelRetry = attempt.status === "failed_retryable";
 
-                  <div className="space-y-4">
-                    {deliveryAttempts.map((attempt) => {
-                      const outcome = getDeliveryOutcome(attempt);
-                      const isApplyingAttemptAction = deliveryActionAttemptId === attempt.id;
-                      const canRetryDeliveryAttempt =
-                        attempt.status === "failed_retryable" || attempt.status === "failed_final";
-                      const canCancelRetry = attempt.status === "failed_retryable";
-
-                      return (
-                        <article
-                          key={attempt.id}
-                          className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                        >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h4 className="text-sm font-semibold text-slate-900">
-                                  Attempt #{attempt.attempt_no}
-                                </h4>
-                                <span className={`ui-badge ${deliveryStatusClass(attempt.status)}`}>
-                                  {attempt.status}
-                                </span>
-                                <span className={`ui-badge ${outcome.className}`}>{outcome.label}</span>
+                    return (
+                      <article key={attempt.id} className="ui-data-card">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="ui-card-icon h-10 w-10 rounded-2xl">
+                                {attempt.status === "succeeded" ? (
+                                  <CheckIcon className="h-4 w-4" />
+                                ) : attempt.status === "failed_final" ? (
+                                  <AlertIcon className="h-4 w-4" />
+                                ) : (
+                                  <SendIcon className="h-4 w-4" />
+                                )}
+                              </span>
+                              <div>
+                                <h4 className="text-sm font-semibold text-slate-950">Attempt #{attempt.attempt_no}</h4>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className={`ui-badge ${deliveryStatusClass(attempt.status)}`}>{attempt.status}</span>
+                                  <span className={`ui-badge ${outcome.className}`}>{outcome.label}</span>
+                                </div>
                               </div>
-                              <p className="mt-2 break-all font-mono text-xs text-slate-600">
-                                {attempt.target_url}
-                              </p>
                             </div>
 
-                            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-right">
-                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">HTTP</p>
-                                <p className="mt-1 text-sm font-semibold text-slate-900">
-                                  {attempt.response_status_code ?? "-"}
-                                </p>
-                              </div>
-
-                              <div className="flex flex-wrap gap-2">
-                                {canRetryDeliveryAttempt && onRetryDeliveryAttempt && selectedJob && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setConfirmAction({
-                                        title: "Retry Delivery",
-                                        description:
-                                          "This will immediately re-queue this failed delivery attempt for the worker. Use it when you want to force another outbound delivery now.",
-                                        confirmLabel: "Retry Delivery",
-                                        confirmClassName: "ui-btn-secondary",
-                                        action: async () => {
-                                          await onRetryDeliveryAttempt(selectedJob.id, attempt.id);
-                                        },
-                                      })
-                                    }
-                                    disabled={isManualActionPending}
-                                    className="ui-btn-secondary"
-                                  >
-                                    {isApplyingAttemptAction ? "Applying..." : "Retry Delivery"}
-                                  </button>
-                                )}
-                                {canCancelRetry && onCancelDeliveryRetry && selectedJob && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setConfirmAction({
-                                        title: "Cancel Retry",
-                                        description:
-                                          "This will stop any further retry for this attempt. If the job is waiting on this retry, it may be marked as failed delivery.",
-                                        confirmLabel: "Cancel Retry",
-                                        confirmClassName: "ui-btn-danger",
-                                        action: async () => {
-                                          await onCancelDeliveryRetry(selectedJob.id, attempt.id);
-                                        },
-                                      })
-                                    }
-                                    disabled={isManualActionPending}
-                                    className="ui-btn-danger"
-                                  >
-                                    {isApplyingAttemptAction ? "Applying..." : "Cancel Retry"}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                            <p className="mt-4 break-all rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700">
+                              {attempt.target_url}
+                            </p>
                           </div>
 
-                          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Started</p>
-                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.started_at)}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Finished</p>
-                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.finished_at)}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Scheduled</p>
-                              <p className="mt-1 text-sm text-slate-700">{formatDate(attempt.scheduled_at ?? null)}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Duration</p>
-                              <p className="mt-1 text-sm text-slate-700">{formatDuration(attempt.duration_ms)}</p>
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Next Retry</p>
-                              <p className="mt-1 text-sm text-slate-700">
-                                {attempt.next_retry_at ? formatDate(attempt.next_retry_at) : "-"}
+                          <div className="flex flex-col gap-3 xl:min-w-[250px]">
+                            <div className="ui-metric-tile-muted">
+                              <p className="ui-kicker">HTTP response</p>
+                              <p className="mt-2 text-lg font-semibold text-slate-950">
+                                {attempt.response_status_code ?? "-"}
                               </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              {canRetryDeliveryAttempt && onRetryDeliveryAttempt && selectedJob && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      title: "Retry Delivery",
+                                      description:
+                                        "This will immediately re-queue this failed delivery attempt for the worker.",
+                                      confirmLabel: "Retry Delivery",
+                                      confirmClassName: "ui-btn-secondary",
+                                      action: async () => {
+                                        await onRetryDeliveryAttempt(selectedJob.id, attempt.id);
+                                      },
+                                    })
+                                  }
+                                  disabled={isManualActionPending}
+                                  className="ui-btn-secondary flex-1"
+                                >
+                                  {isApplyingAttemptAction ? "Applying..." : "Retry Delivery"}
+                                </button>
+                              )}
+                              {canCancelRetry && onCancelDeliveryRetry && selectedJob && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      title: "Cancel Retry",
+                                      description:
+                                        "This will stop any further retry for this attempt. If the job depends on this retry, it may be marked as failed delivery.",
+                                      confirmLabel: "Cancel Retry",
+                                      confirmClassName: "ui-btn-danger",
+                                      action: async () => {
+                                        await onCancelDeliveryRetry(selectedJob.id, attempt.id);
+                                      },
+                                    })
+                                  }
+                                  disabled={isManualActionPending}
+                                  className="ui-btn-danger flex-1"
+                                >
+                                  {isApplyingAttemptAction ? "Applying..." : "Cancel Retry"}
+                                </button>
+                              )}
                             </div>
                           </div>
+                        </div>
 
-                          <div className="mt-4 space-y-3">
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                Failure Reason
-                              </p>
-                              <p className="mt-1 text-sm text-slate-700">
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                          <div className="ui-metric-tile-muted">
+                            <p className="ui-kicker">Started</p>
+                            <p className="mt-2 text-sm text-slate-700">{formatDate(attempt.started_at)}</p>
+                          </div>
+                          <div className="ui-metric-tile-muted">
+                            <p className="ui-kicker">Finished</p>
+                            <p className="mt-2 text-sm text-slate-700">{formatDate(attempt.finished_at)}</p>
+                          </div>
+                          <div className="ui-metric-tile-muted">
+                            <p className="ui-kicker">Scheduled</p>
+                            <p className="mt-2 text-sm text-slate-700">{formatDate(attempt.scheduled_at ?? null)}</p>
+                          </div>
+                          <div className="ui-metric-tile-muted">
+                            <p className="ui-kicker">Duration</p>
+                            <p className="mt-2 text-sm text-slate-700">{formatDuration(attempt.duration_ms)}</p>
+                          </div>
+                          <div className="ui-metric-tile-muted">
+                            <p className="ui-kicker">Next retry</p>
+                            <p className="mt-2 text-sm text-slate-700">
+                              {attempt.next_retry_at ? formatDate(attempt.next_retry_at) : "-"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                          <div className="space-y-4">
+                            <div className="ui-data-card-muted">
+                              <p className="ui-kicker">Failure reason</p>
+                              <p className="mt-2 text-sm leading-6 text-slate-700">
                                 {attempt.error_message?.trim() || "No failure recorded."}
                               </p>
                             </div>
 
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                Response Body
-                              </p>
-                              <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+                            <div className="ui-data-card-muted">
+                              <p className="ui-kicker">Response body</p>
+                              <pre className="ui-code-block mt-3 max-h-44">
                                 {attempt.response_body?.trim() || "No response body recorded."}
                               </pre>
                             </div>
-
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                Request Payload
-                              </p>
-                              <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
-                                {formatJson(attempt.request_payload)}
-                              </pre>
-                            </div>
                           </div>
-                        </article>
-                      );
-                    })}
-                  </div>
+
+                          <div className="ui-data-card-muted">
+                            <p className="ui-kicker">Request payload</p>
+                            <pre className="ui-code-block mt-3 max-h-64">{formatJson(attempt.request_payload)}</pre>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
-                <p className="ui-feedback-empty">No delivery attempts available.</p>
+                <div className="ui-empty-state">
+                  <span className="ui-empty-icon">
+                    <SendIcon className="h-5 w-5" />
+                  </span>
+                  <p className="ui-empty-state-title mt-4">No delivery attempts available</p>
+                  <p className="ui-empty-state-text">
+                    Delivery attempts will appear here when the job reaches the outbound delivery stage.
+                  </p>
+                </div>
               )}
-            </div>
+            </section>
           </div>
         )}
       </div>
 
       {confirmAction && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="ui-modal-backdrop z-[80]">
+          <div className="ui-modal-shell max-w-md p-5">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Confirm Action</p>
-              <h3 className="mt-1 text-lg font-semibold text-slate-900">{confirmAction.title}</h3>
-              <p className="mt-3 text-sm text-slate-600">{confirmAction.description}</p>
+              <p className="ui-kicker">Confirm action</p>
+              <h3 className="mt-2 text-lg font-semibold text-slate-950">{confirmAction.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{confirmAction.description}</p>
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-2">
