@@ -103,8 +103,8 @@ Subscriber URLs
 ### Clone and setup
 
 ```bash
-git clone <your-repo-url>
-cd finalprojectfts
+git clone https://github.com/Basil-Aladra/webhook-task-pipeline.git
+cd webhook-task-pipeline
 cp .env.example .env
 ```
 

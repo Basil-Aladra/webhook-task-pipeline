@@ -1,3 +1,4 @@
+import { AlertIcon, RefreshIcon } from "../Layout/Icons";
 import { DeadLetterJob } from "../../hooks/useDashboard";
 
 type DeadLetterQueueProps = {
@@ -25,58 +26,73 @@ export function DeadLetterQueue({
   onRetryJob,
 }: DeadLetterQueueProps): JSX.Element {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
+    <section className="ui-panel overflow-hidden">
+      <div className="ui-section-header">
         <div>
-          <h2 className="text-lg font-semibold">Dead Letter Queue</h2>
-          <p className="ui-subtitle">Jobs that reached final delivery failure.</p>
+          <p className="ui-kicker">Failure recovery</p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">Dead Letter Queue</h2>
+          <p className="mt-2 ui-subtitle">
+            Jobs that reached final delivery failure and now require explicit operator action.
+          </p>
         </div>
-        <span className="ui-badge ui-badge-danger">
-          {deadLetterJobs.length}
-        </span>
+        <span className="ui-badge ui-badge-danger">{deadLetterJobs.length} item(s)</span>
       </div>
 
-      {retryJobResult && <div className={retryJobResult.type === "success" ? "ui-feedback-success mb-4" : "ui-feedback-error mb-4"}>{retryJobResult.message}</div>}
+      <div className="ui-panel-body space-y-5">
+        {retryJobResult && (
+          <div className={retryJobResult.type === "success" ? "ui-feedback-success" : "ui-feedback-error"}>
+            {retryJobResult.message}
+          </div>
+        )}
 
-      {deadLetterJobs.length === 0 ? (
-        <p className="ui-feedback-empty">No failed jobs</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="ui-table-head-cell">Job ID</th>
-                <th className="ui-table-head-cell">Pipeline ID</th>
-                <th className="ui-table-head-cell">Created At</th>
-                <th className="ui-table-head-cell">Delivery Attempts</th>
-                <th className="ui-table-head-cell">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {deadLetterJobs.map((job) => (
-                <tr key={job.id} className="ui-table-row">
-                  <td className="px-3 py-2 font-mono text-xs">{shortId(job.id)}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{shortId(job.pipeline_id)}</td>
-                  <td className="px-3 py-2">{formatDate(job.created_at)}</td>
-                  <td className="px-3 py-2">{job.deliveryAttemptsCount}</td>
-                  <td className="px-3 py-2">
-                    {onRetryJob && (
-                      <button
-                        type="button"
-                        onClick={() => onRetryJob(job.id)}
-                        disabled={retryingJobId === job.id}
-                        className="ui-btn-secondary"
-                      >
-                        {retryingJobId === job.id ? "Retrying..." : "Retry"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        {deadLetterJobs.length === 0 ? (
+          <div className="ui-empty-state">
+            <p className="ui-empty-state-title">Dead letter queue is clear</p>
+            <p className="ui-empty-state-text">
+              No permanently failed jobs need operator recovery right now.
+            </p>
+          </div>
+        ) : (
+          <div className="ui-table-shell">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50/80">
+                  <tr>
+                    <th className="ui-table-head-cell">Job ID</th>
+                    <th className="ui-table-head-cell">Pipeline ID</th>
+                    <th className="ui-table-head-cell">Created At</th>
+                    <th className="ui-table-head-cell">Delivery Attempts</th>
+                    <th className="ui-table-head-cell">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {deadLetterJobs.map((job) => (
+                    <tr key={job.id} className="ui-table-row">
+                      <td className="ui-table-cell font-mono text-xs text-slate-700">{shortId(job.id)}</td>
+                      <td className="ui-table-cell font-mono text-xs text-slate-700">{shortId(job.pipeline_id)}</td>
+                      <td className="ui-table-cell text-slate-600">{formatDate(job.created_at)}</td>
+                      <td className="ui-table-cell">{job.deliveryAttemptsCount}</td>
+                      <td className="ui-table-cell">
+                        {onRetryJob && (
+                          <button
+                            type="button"
+                            onClick={() => onRetryJob(job.id)}
+                            disabled={retryingJobId === job.id}
+                            className="ui-btn-secondary"
+                          >
+                            <RefreshIcon className="ui-btn-icon" />
+                            {retryingJobId === job.id ? "Retrying..." : "Retry Job"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

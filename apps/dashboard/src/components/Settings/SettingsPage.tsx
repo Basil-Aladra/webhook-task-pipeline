@@ -1,5 +1,18 @@
 import { useMemo, useState } from "react";
 import { API_BASE } from "../../api/client";
+import {
+  ActivityIcon,
+  AlertIcon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
+  KeyIcon,
+  RefreshIcon,
+  ServerIcon,
+  SettingsIcon,
+  ShieldIcon,
+  XIcon,
+} from "../Layout/Icons";
 import { useToast } from "../Toast/ToastProvider";
 
 type SettingsPageProps = {
@@ -160,22 +173,34 @@ export function SettingsPage({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 px-5 py-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <section className="ui-panel overflow-hidden px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">Settings</h2>
-            <p className="mt-1 text-sm text-slate-500">Manage system configuration and behavior</p>
+            <div className="inline-flex items-center gap-3">
+              <span className="ui-card-icon">
+                <SettingsIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">Settings</h2>
+                <p className="mt-1 text-sm text-slate-500">Manage system configuration and behavior</p>
+              </div>
+            </div>
           </div>
           <span className="ui-badge ui-badge-neutral">Environment: {envLabel.charAt(0).toUpperCase() + envLabel.slice(1)}</span>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">API Settings</h3>
-              <p className="ui-subtitle">Manage API access used by the dashboard</p>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+        <div className="space-y-6">
+          <section className="ui-panel px-5 py-5 sm:px-6">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <KeyIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">API Settings</h3>
+                <p className="ui-subtitle">Manage API access used by the dashboard</p>
+              </div>
             </div>
 
             <form
@@ -184,8 +209,8 @@ export function SettingsPage({
                 event.preventDefault();
               }}
             >
-              <div>
-                <label htmlFor="settings-api-key" className="mb-1 block text-sm font-medium text-slate-700">
+              <div className="ui-field-shell">
+                <label htmlFor="settings-api-key" className="ui-form-label">
                   API Key
                 </label>
                 <input
@@ -195,32 +220,39 @@ export function SettingsPage({
                   onChange={(event) => onApiKeyChange(event.target.value)}
                   placeholder="Enter API key"
                   autoComplete="off"
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  className="ui-input ui-input-mono"
                 />
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="ui-form-help">
                   Stored locally in this browser and used for protected dashboard API requests.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => setShowApiKey((value) => !value)} className="ui-btn-secondary">
+                  {showApiKey ? <EyeOffIcon className="ui-btn-icon" /> : <EyeIcon className="ui-btn-icon" />}
                   {showApiKey ? "Hide" : "Show"}
                 </button>
                 <button type="button" onClick={handleCopyApiKey} className="ui-btn-secondary">
+                  <CopyIcon className="ui-btn-icon" />
                   Copy
                 </button>
               </div>
             </form>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">Refresh Settings</h3>
-              <p className="ui-subtitle">Control automatic dashboard refresh behavior</p>
+          <section className="ui-panel px-5 py-5 sm:px-6">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <RefreshIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Refresh Settings</h3>
+                <p className="ui-subtitle">Control automatic dashboard refresh behavior</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.3fr_1fr]">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="ui-field-shell">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium text-slate-800">Auto Refresh</p>
@@ -243,8 +275,8 @@ export function SettingsPage({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <label htmlFor="settings-refresh-interval" className="mb-1 block text-sm font-medium text-slate-700">
+              <div className="ui-field-shell">
+                <label htmlFor="settings-refresh-interval" className="ui-form-label">
                   Interval
                 </label>
                 <select
@@ -252,7 +284,7 @@ export function SettingsPage({
                   value={refreshIntervalMs}
                   onChange={(event) => onRefreshIntervalChange(Number(event.target.value))}
                   disabled={!autoRefreshEnabled}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className="ui-select disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   <option value={5000}>5s</option>
                   <option value={10000}>10s</option>
@@ -262,15 +294,20 @@ export function SettingsPage({
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">Retry Settings</h3>
-              <p className="ui-subtitle">Configure retry-related demo preferences</p>
+          <section className="ui-panel px-5 py-5 sm:px-6">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <ActivityIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Retry Settings</h3>
+                <p className="ui-subtitle">Configure retry-related demo preferences</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor="settings-max-retries" className="mb-1 block text-sm font-medium text-slate-700">
+              <div className="ui-field-shell">
+                <label htmlFor="settings-max-retries" className="ui-form-label">
                   Max Retry Attempts
                 </label>
                 <input
@@ -280,12 +317,12 @@ export function SettingsPage({
                   max={20}
                   value={retryMaxAttempts}
                   onChange={(event) => onRetryMaxAttemptsChange(Math.max(0, Number(event.target.value) || 0))}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  className="ui-input"
                 />
               </div>
 
-              <div>
-                <label htmlFor="settings-retry-delay" className="mb-1 block text-sm font-medium text-slate-700">
+              <div className="ui-field-shell">
+                <label htmlFor="settings-retry-delay" className="ui-form-label">
                   Retry Delay (seconds)
                 </label>
                 <input
@@ -295,7 +332,7 @@ export function SettingsPage({
                   step={1}
                   value={retryDelaySeconds}
                   onChange={(event) => onRetryDelayChange(Math.max(0, Number(event.target.value) || 0))}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  className="ui-input"
                 />
               </div>
             </div>
@@ -306,37 +343,49 @@ export function SettingsPage({
           </section>
         </div>
 
-        <div className="space-y-6 xl:col-span-1">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">System Info</h3>
-              <p className="ui-subtitle">Read-only environment and connection details</p>
+        <div className="space-y-6">
+          <section className="ui-panel px-5 py-5 sm:px-6">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <ServerIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">System Info</h3>
+                <p className="ui-subtitle">Read-only environment and connection details</p>
+              </div>
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="ui-field-shell">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">API Base URL</p>
                 <p className="mt-2 break-all font-mono text-sm text-slate-800">{API_BASE}</p>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="ui-field-shell">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Environment</p>
                 <p className="mt-2 text-sm font-semibold capitalize text-slate-800">{envLabel}</p>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Worker Status</p>
-                <div className="mt-2">
-                  {loadingWorkerHealth ? (
-                    <span className="ui-badge ui-badge-neutral">Loading...</span>
-                  ) : (
-                    <span className={`ui-badge ${workerHealth.status === "running" ? "ui-badge-success" : "ui-badge-neutral"}`}>
-                      {workerHealth.status === "running" ? "Running" : "Unknown"}
-                    </span>
-                  )}
+              <div className="ui-field-shell">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Worker Status</p>
+                    <div className="mt-2">
+                      {loadingWorkerHealth ? (
+                        <span className="ui-badge ui-badge-neutral">Loading...</span>
+                      ) : (
+                        <span className={`ui-badge ${workerHealth.status === "running" ? "ui-badge-success" : "ui-badge-neutral"}`}>
+                          {workerHealth.status === "running" ? "Running" : "Unknown"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="ui-card-icon h-10 w-10 rounded-xl">
+                    <ShieldIcon className="h-4 w-4" />
+                  </span>
                 </div>
                 {workerHealth.workerId && (
-                  <p className="mt-2 text-xs text-slate-500">Worker ID: {workerHealth.workerId}</p>
+                  <p className="mt-3 text-xs text-slate-500">Worker ID: {workerHealth.workerId}</p>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
                   Last heartbeat: {loadingWorkerHealth ? "Loading..." : formatRelativeTime(workerHealth.lastHeartbeat)}
@@ -349,17 +398,24 @@ export function SettingsPage({
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">Actions</h3>
-              <p className="ui-subtitle">Quick reset utilities</p>
+          <section className="ui-panel px-5 py-5 sm:px-6">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <AlertIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Actions</h3>
+                <p className="ui-subtitle">Quick reset utilities</p>
+              </div>
             </div>
 
             <div className="space-y-3">
               <button type="button" onClick={handleResetDashboardState} className="ui-btn-secondary w-full">
+                <RefreshIcon className="ui-btn-icon" />
                 Reset Dashboard State
               </button>
               <button type="button" onClick={handleClearLocalSettings} className="ui-btn-danger w-full">
+                <XIcon className="ui-btn-icon" />
                 Clear Local Settings
               </button>
               <button
@@ -367,6 +423,7 @@ export function SettingsPage({
                 onClick={() => setShowResetDemoDataModal(true)}
                 className="ui-btn-danger w-full"
               >
+                <AlertIcon className="ui-btn-icon" />
                 Reset Demo Data
               </button>
             </div>
@@ -381,16 +438,21 @@ export function SettingsPage({
       </div>
 
       {showResetDemoDataModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-lg rounded-xl border border-red-200 bg-white p-5 shadow-xl">
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">Reset Demo Data</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                This action permanently clears runtime demo data only. Pipeline configuration and secrets are preserved.
-              </p>
+        <div className="ui-modal-backdrop">
+          <div className="ui-modal-shell max-w-lg p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <span className="ui-card-icon">
+                <AlertIcon className="h-5 w-5 text-red-600" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Reset Demo Data</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  This action permanently clears runtime demo data only. Pipeline configuration and secrets are preserved.
+                </p>
+              </div>
             </div>
 
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
               The following data will be deleted:
               <ul className="mt-2 list-disc pl-5">
                 <li>jobs</li>
@@ -400,8 +462,8 @@ export function SettingsPage({
               </ul>
             </div>
 
-            <div className="mb-4">
-              <label htmlFor="reset-demo-data-api-key" className="mb-1 block text-sm font-medium text-slate-700">
+            <div className="mb-4 ui-field-shell">
+              <label htmlFor="reset-demo-data-api-key" className="ui-form-label">
                 Confirm with API Key
               </label>
               <input
@@ -411,7 +473,7 @@ export function SettingsPage({
                 onChange={(event) => setResetDemoDataApiKey(event.target.value)}
                 placeholder="Enter API key"
                 autoComplete="off"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-red-400"
+                className="ui-input"
               />
             </div>
 
@@ -434,6 +496,7 @@ export function SettingsPage({
                 disabled={resetDemoDataLoading}
                 className="ui-btn-danger"
               >
+                <AlertIcon className="ui-btn-icon" />
                 {resetDemoDataLoading ? "Resetting..." : "Confirm Reset"}
               </button>
             </div>
